@@ -1,0 +1,11 @@
+# Real credentials — never commit. Templates/examples stay tracked.
+godaddy/config/config.php
+homeassistant/lucius_secrets.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Generated marketing PDF — built on demand, not checked in (see marketing/README.md)
+marketing/*.pdf
