@@ -1,0 +1,11 @@
+# Nothing in this folder should ever be requested directly over HTTP —
+# config.php is only ever loaded server-side via PHP's require_once.
+# This blocks direct browser access as defense-in-depth on top of that.
+
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

@@ -1,0 +1,16 @@
+# Force HTTPS
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Many Apache/PHP hosting configs (a common shared-hosting quirk, not
+# specific to GoDaddy) strip the Authorization header before PHP ever
+# sees it in $_SERVER. This re-injects it so api/*.php's bearer-token
+# check (check_api_token() in auth.php) can actually read it.
+RewriteCond %{HTTP:Authorization} ^(.+)
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
+# Block direct access to the SQL file and any .md/.txt notes if you upload them here
+<FilesMatch "\.(sql|md)$">
+  Require all denied
+</FilesMatch>

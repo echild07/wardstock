@@ -1,0 +1,461 @@
+[
+  {
+    "id": "tab_oura_sync",
+    "type": "tab",
+    "label": "Lucius - Oura Sync",
+    "disabled": false,
+    "info": "Runs every 4 hours, anchored to 10am (10,14,18,22,2,6). Pulls high-fidelity Oura data into InfluxDB, pushes summary fields to GoDaddy, logs job start/finish to InfluxDB, updates HA status entities.\n\nUNTESTED \u2014 built from the proven PHP logic in godaddy/app/oura.php but never run against a live Node-RED/InfluxDB/Oura stack. Verify the schedule trigger's cron expression in the editor after import (Node-RED's inject-node schedule UI has changed across versions) and test each HTTP Request node's config against your actual Node-RED version before trusting it end to end."
+  },
+  {
+    "id": "n_oura_trigger",
+    "type": "inject",
+    "z": "tab_oura_sync",
+    "name": "Every 4h, anchored 10am",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "0 10,14,18,22,2,6 * * *",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 80,
+    "wires": [
+      [
+        "n_oura_read_secrets_file"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_load_secrets",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Load secrets + start job log",
+    "func": "// msg.payload is the raw file text, read by the preceding \"file in\" core\n// node \u2014 no require('fs'). Function nodes are sandboxed and don't expose\n// Node's require() by default; this was the actual bug (not a version\n// issue \u2014 plain require() has never worked in a stock Function node).\nlet secrets;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    node.error('Could not parse secrets file: ' + e.message, msg);\n    return null;\n}\nmsg.secrets = secrets;\nmsg.job_started_at = new Date().toISOString();\nmsg.job_name = 'oura_sync';\nmsg.influx_start_point = 'sync_job_runs,job_name=oura_sync,status=started value=1 ' + (Date.now() * 1000000);\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 80,
+    "wires": [
+      [
+        "n_oura_write_start_point"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_write_start_point",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "InfluxDB: write start point",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "headers": [],
+    "x": 690,
+    "y": 80,
+    "wires": [
+      [
+        "n_oura_check_token"
+      ]
+    ],
+    "comment": "url/headers set dynamically in the preceding function via msg.url/msg.headers \u2014 configure this node's 'URL' field to {{{msg.url}}} if your Node-RED version needs it explicit, and set method to 'use msg.method' if available."
+  },
+  {
+    "id": "n_oura_check_token",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Check token expiry",
+    "func": "// Mirrors oura_ensure_valid_token() in oura.php: refresh if expiring\n// within 60 seconds, otherwise reuse the stored token untouched.\nconst secrets = msg.secrets;\nconst expiresAt = new Date(secrets.oura_expires_at || 0).getTime();\nconst needsRefresh = (expiresAt <= Date.now() + 60000);\nmsg.needs_refresh = needsRefresh;\nif (needsRefresh) {\n    msg.url = 'https://api.ouraring.com/oauth/token';\n    msg.method = 'POST';\n    msg.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };\n    const params = new URLSearchParams({\n        grant_type: 'refresh_token',\n        refresh_token: secrets.oura_refresh_token,\n        client_id: secrets.oura_client_id,\n        client_secret: secrets.oura_client_secret\n    });\n    msg.payload = params.toString();\n}\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 160,
+    "wires": [
+      [
+        "n_oura_route_refresh"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_route_refresh",
+    "type": "switch",
+    "z": "tab_oura_sync",
+    "name": "Needs refresh?",
+    "property": "needs_refresh",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "true"
+      },
+      {
+        "t": "false"
+      }
+    ],
+    "checkall": "true",
+    "outputs": 2,
+    "x": 650,
+    "y": 160,
+    "wires": [
+      [
+        "n_oura_refresh_call"
+      ],
+      [
+        "n_oura_fetch_sleep"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_refresh_call",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "Oura: refresh token",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 400,
+    "y": 220,
+    "wires": [
+      [
+        "n_oura_save_refreshed_token"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_save_refreshed_token",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Save refreshed token to secrets file",
+    "func": "// Prepares the write instead of doing it directly \u2014 the actual write\n// happens in the following \"file\" (write) core node, not via\n// require('fs') here. Oura ROTATES the refresh token on every use, so\n// the NEW refresh_token must be saved every time; reusing the old one\n// fails on the next run.\nif (!msg.payload || !msg.payload.access_token) {\n    msg.job_failed = true;\n    msg.failure_code = 'oura_auth_failed';\n    msg.failure_detail = 'token refresh did not return access_token: ' + JSON.stringify(msg.payload);\n    return [null, msg];\n}\nconst secrets = msg.secrets;\nsecrets.oura_access_token = msg.payload.access_token;\nsecrets.oura_refresh_token = msg.payload.refresh_token;\nsecrets.oura_expires_at = new Date(Date.now() + (msg.payload.expires_in * 1000)).toISOString();\nmsg.secrets = secrets;\nmsg.filename = '/share/lucius_secrets.json';\nmsg.payload = JSON.stringify(secrets, null, 2);\nreturn [msg, null];",
+    "outputs": 2,
+    "x": 650,
+    "y": 220,
+    "wires": [
+      [
+        "n_oura_write_secrets_file"
+      ],
+      [
+        "n_oura_job_failed"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_fetch_sleep",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Prepare Oura API requests (3 endpoints)",
+    "func": "// Mirrors oura_fetch_day()'s window logic in oura.php EXACTLY \u2014 this is\n// the part that took real debugging to get right on the PHP side (a\n// same-day query misses sessions starting the evening before; even a\n// 2-day window missed one due to an apparent exclusive end_date\n// boundary interacting with UTC). Use date-1 to date+1, always, for\n// every endpoint. Do not simplify this without re-reading PLAN.md and\n// the PHP oura.php comments explaining why.\nconst today = new Date();\nconst target = today.toISOString().slice(0, 10); // today, in this simple version \u2014 see note below\nconst start = new Date(today); start.setDate(start.getDate() - 1);\nconst end = new Date(today); end.setDate(end.getDate() + 1);\nconst startStr = start.toISOString().slice(0, 10);\nconst endStr = end.toISOString().slice(0, 10);\n\nmsg.target_date = target;\nmsg.oura_query = { start_date: startStr, end_date: endStr };\nmsg.access_token = msg.secrets.oura_access_token;\n\n// NOTE: this fetches 'today' only. For a 4-hour-cadence job, consider\n// also re-checking yesterday's date on the FIRST run after 10am, in\n// case last night's session hadn't synced to Oura's cloud yet at the\n// time of an earlier run \u2014 not built in this first pass, flagged as a\n// follow-up rather than guessed at blind.\n\nmsg.url = 'https://api.ouraring.com/v2/usercollection/sleep?' +\n    new URLSearchParams(msg.oura_query).toString();\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.access_token };\nreturn msg;",
+    "outputs": 1,
+    "x": 900,
+    "y": 160,
+    "wires": [
+      [
+        "n_oura_get_sleep"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_get_sleep",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "Oura: GET /sleep",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 1150,
+    "y": 160,
+    "wires": [
+      [
+        "n_oura_get_activity"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_get_activity",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Store sleep resp, prepare activity request",
+    "func": "msg.sleep_response = msg.payload;\nmsg.url = 'https://api.ouraring.com/v2/usercollection/daily_activity?' +\n    new URLSearchParams(msg.oura_query).toString();\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.access_token };\nreturn msg;",
+    "outputs": 1,
+    "x": 1150,
+    "y": 220,
+    "wires": [
+      [
+        "n_oura_get_activity_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_get_activity_http",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "Oura: GET /daily_activity",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 1150,
+    "y": 280,
+    "wires": [
+      [
+        "n_oura_get_readiness"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_get_readiness",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Store activity resp, prepare readiness request",
+    "func": "msg.activity_response = msg.payload;\nmsg.url = 'https://api.ouraring.com/v2/usercollection/daily_readiness?' +\n    new URLSearchParams(msg.oura_query).toString();\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.access_token };\nreturn msg;",
+    "outputs": 1,
+    "x": 900,
+    "y": 280,
+    "wires": [
+      [
+        "n_oura_get_readiness_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_get_readiness_http",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "Oura: GET /daily_readiness",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 650,
+    "y": 280,
+    "wires": [
+      [
+        "n_oura_process_all"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_process_all",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Build InfluxDB lines + GoDaddy summary",
+    "func": "// LOG ALL THE DATA (Ward's instruction, not just the WardStock summary\n// subset) \u2014 captures every scalar field from each record, PLUS\n// decomposes the 5-minute heart_rate/hrv arrays into individual\n// timestamped InfluxDB points (the actual high-fidelity data WardStock\n// itself never captured). Dense per-30-second phase/movement bitstrings\n// are stored as a single raw string field per record for now rather\n// than decomposed into ~960 points per session \u2014 flagged as a\n// reasonable follow-up enhancement, not done in this first pass, to\n// keep initial write volume/complexity manageable.\nmsg.readiness_response = msg.payload;\nconst lines = [];\nconst nowNs = Date.now() * 1000000;\n\nfunction esc(s) { return String(s).replace(/([ ,=])/g, '\\\\$1'); }\n\nfunction sleepRecordToLine(r) {\n    const tags = ['oura_sleep', 'type=' + esc(r.type || 'unknown'), 'day=' + esc(r.day)].join(',');\n    const scalarFields = ['average_breath','average_heart_rate','average_hrv','awake_time',\n        'deep_sleep_duration','efficiency','latency','light_sleep_duration','lowest_heart_rate',\n        'period','rem_sleep_duration','restless_periods','time_in_bed','total_sleep_duration',\n        'readiness_score_delta','sleep_score_delta'];\n    const parts = [];\n    scalarFields.forEach(f => { if (r[f] !== null && r[f] !== undefined) parts.push(f + '=' + r[f]); });\n    parts.push('id=\"' + (r.id || '') + '\"');\n    parts.push('sleep_phase_30_sec=\"' + (r.sleep_phase_30_sec || '') + '\"');\n    parts.push('movement_30_sec=\"' + (r.movement_30_sec || '') + '\"');\n    // Embedded per-session readiness sub-object (distinct from the\n    // separate /daily_readiness endpoint \u2014 both exist, keep them\n    // distinguishable, see PLAN.md note on this).\n    if (r.readiness) {\n        parts.push('embedded_readiness_score=' + r.readiness.score);\n        if (r.readiness.contributors) {\n            Object.entries(r.readiness.contributors).forEach(([k, v]) => {\n                if (v !== null) parts.push('embedded_readiness_' + k + '=' + v);\n            });\n        }\n        if (r.readiness.temperature_deviation !== null) parts.push('temperature_deviation=' + r.readiness.temperature_deviation);\n        if (r.readiness.temperature_trend_deviation !== null) parts.push('temperature_trend_deviation=' + r.readiness.temperature_trend_deviation);\n    }\n    const ts = r.bedtime_start ? new Date(r.bedtime_start).getTime() * 1000000 : nowNs;\n    return tags + ' ' + parts.join(',') + ' ' + ts;\n}\n\nfunction decomposeTimeSeries(measurement, r, key) {\n    if (!r[key] || !r[key].items || !r.bedtime_start) return [];\n    const interval = r[key].interval || 300;\n    const base = new Date(r.bedtime_start).getTime();\n    const out = [];\n    r[key].items.forEach((val, i) => {\n        if (val === null || val === undefined) return;\n        const ts = (base + i * interval * 1000) * 1000000;\n        out.push(measurement + ',sleep_id=' + esc(r.id) + ' value=' + val + ' ' + ts);\n    });\n    return out;\n}\n\nconst sleepRecords = (msg.sleep_response && msg.sleep_response.data) || [];\nsleepRecords.forEach(r => {\n    lines.push(sleepRecordToLine(r));\n    lines.push(...decomposeTimeSeries('oura_heart_rate', r, 'heart_rate'));\n    lines.push(...decomposeTimeSeries('oura_hrv', r, 'hrv'));\n});\n\nconst activityRecords = (msg.activity_response && msg.activity_response.data) || [];\nactivityRecords.forEach(r => {\n    const parts = [];\n    Object.entries(r).forEach(([k, v]) => {\n        if (typeof v === 'number') parts.push(k + '=' + v);\n        else if (typeof v === 'string' && k !== 'day' && k !== 'class_5_min') parts.push(k + '=\"' + v.replace(/\"/g,'') + '\"');\n    });\n    if (parts.length) lines.push('oura_daily_activity,day=' + esc(r.day) + ' ' + parts.join(',') + ' ' + nowNs);\n});\n\nconst readinessRecords = (msg.readiness_response && msg.readiness_response.data) || [];\nreadinessRecords.forEach(r => {\n    const parts = ['score=' + r.score];\n    if (r.contributors) {\n        Object.entries(r.contributors).forEach(([k, v]) => { if (v !== null) parts.push(k + '=' + v); });\n    }\n    if (parts.length) lines.push('oura_daily_readiness,day=' + esc(r.day) + ' ' + parts.join(',') + ' ' + nowNs);\n});\n\nmsg.influx_lines = lines;\n\n// The curated WardStock summary subset still gets pushed to GoDaddy \u2014\n// unchanged shape, this is separate from the full InfluxDB archive above.\nconst longSleep = sleepRecords.filter(r => r.day === msg.target_date &&\n    (r.type === 'long_sleep' || r.type === 'sleep'))\n    .sort((a,b) => (b.total_sleep_duration||0) - (a.total_sleep_duration||0))[0];\nconst todayActivity = activityRecords.find(r => r.day === msg.target_date);\n\nconst summary = { date: msg.target_date };\nif (longSleep) {\n    if (longSleep.total_sleep_duration) summary.sleep_duration_hrs = Math.round((longSleep.total_sleep_duration / 3600) * 100) / 100;\n    if (longSleep.efficiency) summary.sleep_efficiency = longSleep.efficiency;\n    if (longSleep.lowest_heart_rate) summary.resting_hr = longSleep.lowest_heart_rate;\n    if (longSleep.average_hrv) summary.hrv = longSleep.average_hrv;\n}\nif (todayActivity && todayActivity.steps) summary.steps = todayActivity.steps;\nmsg.godaddy_summary = summary;\n\nreturn msg;",
+    "outputs": 1,
+    "x": 650,
+    "y": 340,
+    "wires": [
+      [
+        "n_oura_write_influx"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_write_influx",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Prepare InfluxDB batch write",
+    "func": "// Batches all lines from this run into one write request \u2014 InfluxDB's\n// line protocol accepts multiple points newline-separated in one POST.\nmsg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_lines.join('\\n');\nreturn msg;",
+    "outputs": 1,
+    "x": 900,
+    "y": 340,
+    "wires": [
+      [
+        "n_oura_influx_write_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_influx_write_http",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "InfluxDB: write batch",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 1150,
+    "y": 340,
+    "wires": [
+      [
+        "n_oura_push_godaddy"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_push_godaddy",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Prepare GoDaddy push",
+    "func": "msg.url = msg.secrets.godaddy_base_url + '/api/oura_push.php';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.godaddy_api_sync_token, 'Content-Type': 'application/json' };\nmsg.payload = JSON.stringify(msg.godaddy_summary);\nreturn msg;",
+    "outputs": 1,
+    "x": 1150,
+    "y": 400,
+    "wires": [
+      [
+        "n_oura_push_godaddy_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_push_godaddy_http",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "GoDaddy: POST oura_push.php",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 900,
+    "y": 400,
+    "wires": [
+      [
+        "n_oura_job_success"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_job_success",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Log success + update HA status",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_sync,status=success duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_oura_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_oura_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_oura_last_attempt', value: new Date().toISOString() }\n];\nreturn msg;",
+    "outputs": 1,
+    "x": 650,
+    "y": 460,
+    "wires": [
+      [
+        "n_oura_final_influx_write",
+        "n_oura_set_ha_entities"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_job_failed",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Log failure + update HA status",
+    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_sync,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_oura_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_oura_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_oura_last_error', value: code + ': ' + (msg.failure_detail || '') }\n];\nnode.warn('Oura sync failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 460,
+    "wires": [
+      [
+        "n_oura_final_influx_write",
+        "n_oura_set_ha_entities"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_final_influx_write",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Prepare finish-point write",
+    "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
+    "outputs": 1,
+    "x": 650,
+    "y": 520,
+    "wires": [
+      [
+        "n_oura_final_influx_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_final_influx_http",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "InfluxDB: write finish point",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 900,
+    "y": 520,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "n_oura_set_ha_entities",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Split entities for HA WebSocket node",
+    "func": "// Fan out msg.ha_entities into proper Home Assistant SERVICE calls, not\n// raw entity_id/value pairs. Setting a helper entity's value is a service\n// call, not a direct state write:\n//   input_boolean -> turn_on / turn_off, no extra data\n//   input_text    -> set_value, data: { value }\n//   input_datetime -> set_datetime, data: { datetime }\n// The old \"ha-entity\" node this used to feed is deprecated (Node-RED will\n// say so explicitly) \u2014 this now feeds an api-call-service node instead,\n// configured to read domain/service/target/data dynamically from msg.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { domain: call.domain, service: call.service, target: call.target, payload: call.data };\n}).filter(Boolean);",
+    "outputs": 1,
+    "x": 400,
+    "y": 520,
+    "wires": [
+      [
+        "n_oura_ha_set_state"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_ha_set_state",
+    "type": "api-call-service",
+    "z": "tab_oura_sync",
+    "name": "Call HA service (set helper entity)",
+    "server": "",
+    "version": 5,
+    "debugenabled": false,
+    "domain": "",
+    "service": "",
+    "areaId": [],
+    "deviceId": [],
+    "entityId": [],
+    "data": "",
+    "dataType": "jsonata",
+    "mergeContext": "",
+    "mustacheAltTags": false,
+    "outputProperties": [],
+    "queue": "none",
+    "domainType": "msg.domain",
+    "serviceType": "msg.service",
+    "targetType": "msg.target",
+    "dataFieldType": "msg.payload",
+    "comment": "Deprecated 'ha-entity' node replaced with the core api-call-service node, driven dynamically from msg.domain/msg.service/msg.target/msg.payload (set by the preceding function node). REQUIRED after import: open this node, set the 'Server' field to your HA connection, and confirm the domain/service/target/data field TYPES actually say 'msg.' rather than a fixed value \u2014 the exact property names for this (e.g. domainType/serviceType) have changed across versions of node-red-contrib-home-assistant-websocket, so this config may need re-selecting in the editor's dropdowns rather than trusting the imported JSON blindly.",
+    "x": 200,
+    "y": 580,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "n_oura_read_secrets_file",
+    "type": "file in",
+    "z": "tab_oura_sync",
+    "name": "Read /share/lucius_secrets.json",
+    "filename": "/share/lucius_secrets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 260,
+    "y": 80,
+    "wires": [
+      [
+        "n_oura_load_secrets"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_write_secrets_file",
+    "type": "file",
+    "z": "tab_oura_sync",
+    "name": "Write refreshed tokens to secrets file",
+    "filename": "/share/lucius_secrets.json",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": false,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 650,
+    "y": 220,
+    "wires": [
+      [
+        "n_oura_fetch_sleep"
+      ]
+    ]
+  }
+]

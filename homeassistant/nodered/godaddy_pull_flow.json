@@ -1,0 +1,306 @@
+[
+  {
+    "id": "tab_godaddy_pull",
+    "type": "tab",
+    "label": "Lucius - GoDaddy Pull",
+    "disabled": false,
+    "info": "Runs every 15 minutes. Pulls full incidents/daily_logs/therapy_sessions from GoDaddy's api/pull_manual_data.php, writes structured fields to InfluxDB for correlation, archives the FULL raw response to local disk for disaster recovery (restorable via WardStock's existing import.php \u2014 see PLAN.md \u00a74), logs job start/finish to InfluxDB, updates HA status entities.\n\nUNTESTED \u2014 same caveat as the Oura Sync flow. Verify the schedule trigger and http request node configs against your actual Node-RED version after import."
+  },
+  {
+    "id": "n_gd_trigger",
+    "type": "inject",
+    "z": "tab_godaddy_pull",
+    "name": "Every 15 minutes",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "900",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 10,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 80,
+    "wires": [
+      [
+        "n_gd_read_secrets_file"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_load_secrets",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Load secrets + start job log",
+    "func": "// msg.payload is the raw file text, read by the preceding \"file in\" core\n// node \u2014 no require('fs'). Same fix as the Oura Sync flow's equivalent\n// node; see its comment for the full explanation of why require() never\n// worked here in the first place (Function nodes are sandboxed, this\n// isn't a version-drift issue).\nlet secrets;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    node.error('Could not parse secrets file: ' + e.message, msg);\n    return null;\n}\nmsg.secrets = secrets;\nmsg.job_started_at = new Date().toISOString();\nconst nowNs = Date.now() * 1000000;\nmsg.url = secrets.influxdb_url + '/api/v2/write?org=' + secrets.influxdb_org + '&bucket=' + secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = 'sync_job_runs,job_name=godaddy_pull,status=started value=1 ' + nowNs;\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 80,
+    "wires": [
+      [
+        "n_gd_write_start_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_write_start_http",
+    "type": "http request",
+    "z": "tab_godaddy_pull",
+    "name": "InfluxDB: write start point",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 650,
+    "y": 80,
+    "wires": [
+      [
+        "n_gd_prepare_pull"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_prepare_pull",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Prepare pull_manual_data request",
+    "func": "msg.url = msg.secrets.godaddy_base_url + '/api/pull_manual_data.php?scope=since_last';\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.godaddy_api_sync_token };\nreturn msg;",
+    "outputs": 1,
+    "x": 900,
+    "y": 80,
+    "wires": [
+      [
+        "n_gd_pull_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_pull_http",
+    "type": "http request",
+    "z": "tab_godaddy_pull",
+    "name": "GoDaddy: GET pull_manual_data.php",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 1150,
+    "y": 80,
+    "wires": [
+      [
+        "n_gd_process"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_process",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Split: InfluxDB write + local archive",
+    "func": "// Full response (msg.payload) has the SAME shape as a human-triggered\n// WardStock export \u2014 see build_export_records() in db.php. Two things\n// happen with it (PLAN.md \u00a74):\n//  1. Structured/numeric fields -> InfluxDB (correlation-friendly copy)\n//  2. The FULL raw response -> archived to local disk (disaster-recovery\n//     artifact, restorable via WardStock's existing import.php)\n//\n// Includes medications as of this fix \u2014 originally missing entirely,\n// meaning HA had no backup of dosage history despite being meant as the\n// disaster-recovery source of truth. api/pull_manual_data.php and\n// import.php were both updated to match (see db.php's build_export_records()\n// and import.php's new 'medication' record_type handling).\nconst data = msg.payload;\nif (!data || !Array.isArray(data.records)) {\n    msg.job_failed = true;\n    msg.failure_code = 'godaddy_error_response';\n    msg.failure_detail = 'response missing records array: ' + JSON.stringify(data).slice(0, 300);\n    return [null, msg];\n}\n\nfunction esc(s) { return String(s).replace(/([ ,=])/g, '\\\\$1'); }\nconst lines = [];\nconst nowNs = Date.now() * 1000000;\n\ndata.records.forEach(r => {\n    if (r.record_type === 'incident') {\n        const ts = r.occurred_at ? new Date(r.occurred_at.replace(' ', 'T')).getTime() * 1000000 : nowNs;\n        const parts = [];\n        ['anxiety_intensity','duration_minutes','nitroglycerin_taken'].forEach(f => {\n            if (r[f] !== null && r[f] !== undefined) parts.push(f + '=' + r[f]);\n        });\n        ['chest_sensation','arm_sensation','shoulder_sensation','headache_sensation','shaking'].forEach(f => {\n            if (r[f]) parts.push(f + '=\"' + r[f] + '\"');\n        });\n        if (parts.length) {\n            lines.push('incidents,category=' + esc(r.category) + ' ' + parts.join(',') + ' ' + ts);\n        }\n    } else if (r.record_type === 'daily_log') {\n        const ts = r.log_date ? new Date(r.log_date + 'T12:00:00').getTime() * 1000000 : nowNs;\n        const parts = [];\n        ['sleep_duration_hrs','sleep_efficiency','resting_hr','hrv','weight','steps',\n         'exercise_minutes','standing_minutes','caffeine_servings','alcohol_drinks',\n         'mood_rating','state_of_mind'].forEach(f => {\n            if (r[f] !== null && r[f] !== undefined) parts.push(f + '=' + r[f]);\n        });\n        if (parts.length) lines.push('daily_log_manual,log_date=' + esc(r.log_date) + ' ' + parts.join(',') + ' ' + ts);\n    } else if (r.record_type === 'therapy_session') {\n        const ts = r.session_date ? new Date(r.session_date.replace(' ', 'T')).getTime() * 1000000 : nowNs;\n        const parts = [];\n        ['mood_before','mood_after'].forEach(f => { if (r[f] !== null && r[f] !== undefined) parts.push(f + '=' + r[f]); });\n        if (parts.length) lines.push('therapy_sessions,session_type=' + esc(r.session_type || 'individual') + ' ' + parts.join(',') + ' ' + ts);\n    } else if (r.record_type === 'medication') {\n        // Timestamped at start_date (noon, to avoid timezone-boundary\n        // ambiguity) \u2014 this is a dosage-era record, not a daily reading,\n        // so the timestamp marks when this dosage began, not \"now.\"\n        const ts = r.start_date ? new Date(r.start_date + 'T12:00:00').getTime() * 1000000 : nowNs;\n        const parts = ['frequency_days=' + (r.frequency_days || 1)];\n        if (r.sort_order !== null && r.sort_order !== undefined) parts.push('sort_order=' + r.sort_order);\n        parts.push('dosage=\"' + (r.dosage || '') + '\"');\n        parts.push('end_date=\"' + (r.end_date || '') + '\"');\n        parts.push('active=' + (r.end_date ? 'false' : 'true'));\n        lines.push('medications,name=' + esc(r.name) + ',med_type=' + esc(r.med_type || 'scheduled') + ' ' + parts.join(',') + ' ' + ts);\n    }\n});\n\nmsg.influx_lines = lines;\nmsg.raw_archive_data = data;\nmsg.record_count = data.records.length;\nreturn [msg, null];",
+    "outputs": 2,
+    "x": 650,
+    "y": 160,
+    "wires": [
+      [
+        "n_gd_write_influx"
+      ],
+      [
+        "n_gd_job_failed"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_write_influx",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Prepare InfluxDB batch write",
+    "func": "if (!msg.influx_lines.length) {\n    // Nothing structured this run (e.g. only free-text fields changed) \u2014\n    // skip the write, go straight to archiving.\n    return [null, msg];\n}\nmsg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_lines.join('\\n');\nreturn [msg, msg];",
+    "outputs": 2,
+    "x": 900,
+    "y": 160,
+    "wires": [
+      [
+        "n_gd_influx_write_http"
+      ],
+      [
+        "n_gd_archive_file"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_influx_write_http",
+    "type": "http request",
+    "z": "tab_godaddy_pull",
+    "name": "InfluxDB: write batch",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 1150,
+    "y": 140,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "n_gd_archive_file",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Prepare archive write",
+    "func": "// Prepares the archive write \u2014 the actual write happens in the\n// following \"file\" (write) core node, not via require('fs') here.\n// createDir is enabled on that node, replacing the old fs.mkdirSync\n// call, so the /share/lucius_archive folder gets created automatically\n// if it doesn't exist yet.\nmsg.filename = '/share/lucius_archive/latest_manual_data.json';\nmsg.payload = JSON.stringify(msg.raw_archive_data, null, 2);\nreturn msg;",
+    "outputs": 1,
+    "x": 1150,
+    "y": 200,
+    "wires": [
+      [
+        "n_gd_archive_write_file"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_job_success",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Log success + update HA status",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_pull,status=success record_count=' + (msg.record_count||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_godaddy_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_godaddy_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_godaddy_last_attempt', value: new Date().toISOString() }\n];\nreturn msg;",
+    "outputs": 1,
+    "x": 900,
+    "y": 260,
+    "wires": [
+      [
+        "n_gd_final_influx_write",
+        "n_gd_set_ha_entities"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_job_failed",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Log failure + update HA status",
+    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_pull,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_godaddy_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_godaddy_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_godaddy_last_error', value: code + ': ' + (msg.failure_detail || '') }\n];\nnode.warn('GoDaddy pull failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 260,
+    "wires": [
+      [
+        "n_gd_final_influx_write",
+        "n_gd_set_ha_entities"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_final_influx_write",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Prepare finish-point write",
+    "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
+    "outputs": 1,
+    "x": 650,
+    "y": 320,
+    "wires": [
+      [
+        "n_gd_final_influx_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_final_influx_http",
+    "type": "http request",
+    "z": "tab_godaddy_pull",
+    "name": "InfluxDB: write finish point",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 900,
+    "y": 320,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "n_gd_set_ha_entities",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "Split entities for HA WebSocket node",
+    "func": "// Same fix as the Oura Sync flow \u2014 see its \"Split entities for HA\n// WebSocket node\" comment for the full explanation. Builds proper\n// service-call objects (domain/service/target/data) instead of raw\n// entity_id/value pairs, since setting a helper entity is a service\n// call, not a direct state write. Feeds an api-call-service node now,\n// not the deprecated ha-entity node.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { domain: call.domain, service: call.service, target: call.target, payload: call.data };\n}).filter(Boolean);",
+    "outputs": 1,
+    "x": 400,
+    "y": 380,
+    "wires": [
+      [
+        "n_gd_ha_set_state"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_ha_set_state",
+    "type": "api-call-service",
+    "z": "tab_godaddy_pull",
+    "name": "Call HA service (set helper entity)",
+    "server": "",
+    "version": 5,
+    "debugenabled": false,
+    "domain": "",
+    "service": "",
+    "areaId": [],
+    "deviceId": [],
+    "entityId": [],
+    "data": "",
+    "dataType": "jsonata",
+    "mergeContext": "",
+    "mustacheAltTags": false,
+    "outputProperties": [],
+    "queue": "none",
+    "domainType": "msg.domain",
+    "serviceType": "msg.service",
+    "targetType": "msg.target",
+    "dataFieldType": "msg.payload",
+    "comment": "Same fix and same required post-import check as the Oura Sync flow's equivalent node \u2014 set the Server field, confirm domain/service/target/data field types say 'msg.' in the editor rather than trusting the imported JSON blindly.",
+    "x": 200,
+    "y": 440,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "n_gd_read_secrets_file",
+    "type": "file in",
+    "z": "tab_godaddy_pull",
+    "name": "Read /share/lucius_secrets.json",
+    "filename": "/share/lucius_secrets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 260,
+    "y": 80,
+    "wires": [
+      [
+        "n_gd_load_secrets"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_archive_write_file",
+    "type": "file",
+    "z": "tab_godaddy_pull",
+    "name": "Write disaster-recovery archive",
+    "filename": "/share/lucius_archive/latest_manual_data.json",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 1150,
+    "y": 220,
+    "wires": [
+      [
+        "n_gd_job_success"
+      ]
+    ]
+  }
+]

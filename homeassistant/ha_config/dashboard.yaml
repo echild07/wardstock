@@ -1,0 +1,40 @@
+# Lucius project — status panel Lovelace card (PLAN.md §9).
+# Paste into a dashboard view via the UI editor's "Show code editor," or
+# add as a card in a dashboard YAML file. Two separate cadences shown
+# deliberately (§9) — a 3-hour-old Oura timestamp is normal, the same age
+# on GoDaddy would be a real problem, so don't merge these into one card
+# without keeping that distinction visible.
+
+type: vertical-stack
+cards:
+  - type: entities
+    title: "Lucius — Oura Sync (every 4h, anchored 10am)"
+    entities:
+      - entity: input_datetime.lucius_oura_last_success
+        name: Last successful sync
+      - entity: input_datetime.lucius_oura_last_attempt
+        name: Last attempt
+      - entity: input_boolean.lucius_oura_last_attempt_ok
+        name: Last attempt OK
+      - entity: input_text.lucius_oura_last_error
+        name: Last error (if any)
+
+  - type: entities
+    title: "Lucius — GoDaddy Manual Data Pull (every 15min)"
+    entities:
+      - entity: input_datetime.lucius_godaddy_last_success
+        name: Last successful pull
+      - entity: input_datetime.lucius_godaddy_last_attempt
+        name: Last attempt
+      - entity: input_boolean.lucius_godaddy_last_attempt_ok
+        name: Last attempt OK
+      - entity: input_text.lucius_godaddy_last_error
+        name: Last error (if any)
+
+  - type: markdown
+    content: >
+      Same information is also visible from **wherever you are** (this panel
+      is home-network-only unless you've set up Nabu Casa or Tailscale — see
+      PLAN.md §8) on WardStock's own `oura_sync.php` and `oura_test.php`
+      pages, which read the GoDaddy-side `ha_sync_log` table — a second,
+      independent, always-reachable view of the same sync activity.

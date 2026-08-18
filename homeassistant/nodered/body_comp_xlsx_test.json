@@ -1,0 +1,148 @@
+[
+  {
+    "id": "tab_bodycomp_test",
+    "type": "tab",
+    "label": "TEST - officedocs xlsx parsing",
+    "disabled": false,
+    "info": "Round 2 \u2014 real attempt, built from confirmed facts (not guesses): package.json confirms the node type is 'exceljs' (nodes/exceljs/exceljs.js). Confirmed operations include 'read' (requires params.source = file path string or Buffer) and 'readRange' (requires params.range, e.g. 'A1:Q41'; carries the loaded workbook forward via msg._doc). One thing still assumed rather than confirmed: that each exceljs node instance's operation is selected via a config property literally named 'operation' \u2014 very likely correct given the terminology used everywhere else in this package, but not verified against the constructor code directly. A safety-check command is provided alongside this flow specifically to confirm or correct that one remaining assumption in the same round."
+  },
+  {
+    "id": "n_bc_trigger",
+    "type": "inject",
+    "z": "tab_bodycomp_test",
+    "name": "Click to test",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 80,
+    "wires": [
+      [
+        "n_bc_set_source"
+      ]
+    ]
+  },
+  {
+    "id": "n_bc_set_source",
+    "type": "function",
+    "z": "tab_bodycomp_test",
+    "name": "Set params.source (confirmed field name)",
+    "func": "// Confirmed from real grep of exceljs.js: 'read' operation requires\n// params.source, either a file path string or a Buffer. Using the\n// simpler file-path-string form \u2014 no separate file-in node needed.\nmsg.params = { source: '/share/lucius_body_comp_import/test_sample.xlsx' };\nreturn msg;",
+    "outputs": 1,
+    "x": 350,
+    "y": 80,
+    "wires": [
+      [
+        "n_bc_exceljs_read"
+      ]
+    ]
+  },
+  {
+    "id": "n_bc_exceljs_read",
+    "type": "exceljs",
+    "z": "tab_bodycomp_test",
+    "name": "exceljs: read",
+    "operation": "read",
+    "comment": "ASSUMED config property name 'operation' \u2014 confirm against the safety-check grep. If this node type/property is wrong, Node-RED will likely show it as an unrecognized/broken node on import, which is itself useful information.",
+    "x": 580,
+    "y": 80,
+    "wires": [
+      [
+        "n_bc_set_range"
+      ],
+      [
+        "n_bc_debug_error"
+      ]
+    ]
+  },
+  {
+    "id": "n_bc_set_range",
+    "type": "function",
+    "z": "tab_bodycomp_test",
+    "name": "Set params.range + params.sheet (corrected field name)",
+    "func": "// Corrected after a real run: the field is 'sheet', not 'sheetName' as\n// originally guessed. Node-RED's own error made this an easy, precise\n// fix rather than another guess. Still assuming this wants the sheet's\n// NAME as a string (confirmed 'Sheet1' via openpyxl earlier) rather\n// than a numeric index \u2014 if that's also wrong, the next error should\n// say so clearly (e.g. sheet-not-found vs a type mismatch).\nmsg.params = { range: 'A1:Q41', sheet: 'Sheet1' };\nreturn msg;",
+    "outputs": 1,
+    "x": 350,
+    "y": 160,
+    "wires": [
+      [
+        "n_bc_exceljs_readrange"
+      ]
+    ]
+  },
+  {
+    "id": "n_bc_exceljs_readrange",
+    "type": "exceljs",
+    "z": "tab_bodycomp_test",
+    "name": "exceljs: readRange",
+    "operation": "readRange",
+    "comment": "Same config-property assumption as the 'read' node above.",
+    "x": 580,
+    "y": 160,
+    "wires": [
+      [
+        "n_bc_stringify"
+      ],
+      [
+        "n_bc_debug_error"
+      ]
+    ]
+  },
+  {
+    "id": "n_bc_debug_success",
+    "type": "debug",
+    "z": "tab_bodycomp_test",
+    "name": "SUCCESS: msg.payload only (avoids the _doc circular-ref crash)",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 850,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "n_bc_debug_error",
+    "type": "debug",
+    "z": "tab_bodycomp_test",
+    "name": "ERROR: whatever went wrong",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 850,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "n_bc_stringify",
+    "type": "function",
+    "z": "tab_bodycomp_test",
+    "name": "Force readable text (sidesteps debug-sidebar display ambiguity)",
+    "func": "try {\n    msg.payload = JSON.stringify(msg.payload, null, 2);\n} catch (e) {\n    msg.payload = 'JSON.stringify failed: ' + e.message +\n        ' | typeof payload: ' + typeof msg.payload +\n        ' | top-level keys: ' + (msg.payload && typeof msg.payload === 'object' ? Object.keys(msg.payload).join(', ') : 'n/a');\n}\nreturn msg;",
+    "outputs": 1,
+    "x": 720,
+    "y": 160,
+    "wires": [
+      [
+        "n_bc_debug_success"
+      ]
+    ]
+  }
+]

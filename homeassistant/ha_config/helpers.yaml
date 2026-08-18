@@ -1,0 +1,40 @@
+# Lucius project — HA helper entities for the sync status panel (PLAN.md §9).
+# Add this to configuration.yaml (or split into packages/lucius.yaml if you
+# use packages) and restart HA, or add these one-by-one via
+# Settings -> Devices & Services -> Helpers in the UI instead.
+#
+# These are the exact entity_ids both Node-RED flows write to — if you
+# rename anything here, update the flows to match, or they'll fail
+# silently (HA just won't have that entity, the ha-entity node will error).
+
+input_datetime:
+  lucius_oura_last_success:
+    name: "Lucius: Oura last successful sync"
+    has_date: true
+    has_time: true
+  lucius_oura_last_attempt:
+    name: "Lucius: Oura last attempt"
+    has_date: true
+    has_time: true
+  lucius_godaddy_last_success:
+    name: "Lucius: GoDaddy last successful pull"
+    has_date: true
+    has_time: true
+  lucius_godaddy_last_attempt:
+    name: "Lucius: GoDaddy last attempt"
+    has_date: true
+    has_time: true
+
+input_boolean:
+  lucius_oura_last_attempt_ok:
+    name: "Lucius: Oura last attempt OK"
+  lucius_godaddy_last_attempt_ok:
+    name: "Lucius: GoDaddy last attempt OK"
+
+input_text:
+  lucius_oura_last_error:
+    name: "Lucius: Oura last error"
+    max: 255
+  lucius_godaddy_last_error:
+    name: "Lucius: GoDaddy last error"
+    max: 255
