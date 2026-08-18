@@ -4,7 +4,7 @@
 
 "Taking stock of Ward." A private, single-user, password-protected health tracker: **Incidents** (anxiety & cardiac episodes), **Daily Log** (sleep/exercise/caffeine/alcohol/medication), **Medications** (start/end dates, dosage history), **Therapy** (sessions + recurring schedule + since-last-session report), a 7-day dashboard, and a JSON **Export**.
 
-**Current version: 2.1.2 "Lucius"**
+**Current version: 2.2.1 "Lucius"**
 
 Single-user by design — one shared login (`app_user`), no per-person data separation. See "Is this multi-user?" at the bottom if you ever need to change that.
 
@@ -53,6 +53,8 @@ Run whichever `sql/alter_*.sql` files are new since your last deployment (in fil
 | `incidents.php` / `incident_form.php` | Anxiety & Cardiac incidents |
 | `daily.php` / `daily_form.php` | Daily Log — sleep, weight, exercise, caffeine, alcohol, medication |
 | `weight_trend.php` | 60-day weight trend chart (SVG, no external dependency) |
+| `weight_deviation.php` | Weight bar chart, deviation from the selected range's own average (7/30/90 days, Chart.js) |
+| `status.php` | Lucius project — HA/Node-RED/Analytics status view, fed by the Home Assistant piece's Status Heartbeat flow |
 | `medications.php` / `medication_form.php` | Medication list — start/end dates, dosage history, actual due-date recurrence |
 | `therapy.php` / `therapy_form.php` | Session log + since-last-session report |
 | `therapy_schedules.php` / `therapy_schedule_form.php` | Recurring therapy plan (drives dashboard reminders) |
