@@ -31,6 +31,18 @@ cards:
       - entity: input_text.lucius_godaddy_last_error
         name: Last error (if any)
 
+  - type: entities
+    title: "Lucius — Body Composition Import (daily, ~noon)"
+    entities:
+      - entity: input_datetime.lucius_bodycomp_last_success
+        name: Last successful run
+      - entity: input_datetime.lucius_bodycomp_last_attempt
+        name: Last attempt
+      - entity: input_boolean.lucius_bodycomp_last_attempt_ok
+        name: Last attempt OK
+      - entity: input_text.lucius_bodycomp_last_error
+        name: Last error (if any)
+
   - type: markdown
     content: >
       Same information is also visible from **wherever you are** (this panel

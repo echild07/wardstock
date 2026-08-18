@@ -59,7 +59,7 @@ $ringResp = $tokens ? oura_api_get($pdo, 'ring_configuration') : null;
 // HA's own dashboard (which may not be reachable away from home — see
 // homeassistant/PLAN.md §7, §8).
 $haLatestByEndpoint = [];
-foreach (['oura_push', 'pull_manual_data', 'status'] as $ep) {
+foreach (['oura_push', 'pull_manual_data', 'status', 'weight_push', 'status_push'] as $ep) {
     $stmt = $pdo->prepare('SELECT * FROM ha_sync_log WHERE endpoint = ? ORDER BY called_at DESC LIMIT 1');
     $stmt->execute([$ep]);
     $haLatestByEndpoint[$ep] = $stmt->fetch();
@@ -89,7 +89,13 @@ foreach (['oura_push', 'pull_manual_data', 'status'] as $ep) {
   <table class="day-table">
     <tbody>
       <?php
-        $haLabels = ['oura_push' => 'Oura data push (every 4h)', 'pull_manual_data' => 'Manual data pull (every 15min)', 'status' => 'Status check'];
+        $haLabels = [
+          'oura_push' => 'Oura data push (every 4h)',
+          'pull_manual_data' => 'Manual data pull (every 15min)',
+          'status' => 'Status check',
+          'weight_push' => 'Body comp weight push (daily, noon)',
+          'status_push' => 'Status heartbeat (every 15-30min)',
+        ];
         foreach ($haLabels as $ep => $label):
           $row = $haLatestByEndpoint[$ep];
       ?>

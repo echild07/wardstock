@@ -48,6 +48,33 @@ function log_ha_sync($pdo, $endpoint, $statusCode, $detail = null) {
     $stmt->execute([$endpoint, $statusCode, $detail]);
 }
 
+// Body Composition Import (Lucius project, HA piece — PLAN.md §14): sets
+// daily_logs.weight for a date ONLY if it's currently unset. Never
+// overwrites a manual entry made before or after the scale data arrives,
+// and makes re-importing the same historical rows safe by default (the
+// scale app's export has a poor date-range picker, so re-exports routinely
+// contain days already imported — a day that already has a weight, from
+// any source, is always a no-op here). Returns true if a value was
+// written, false if it was left alone (already set).
+function push_weight_if_unset($pdo, $date, $weightLb) {
+    $existing = $pdo->prepare('SELECT id, weight FROM daily_logs WHERE log_date = ?');
+    $existing->execute([$date]);
+    $row = $existing->fetch();
+
+    if ($row) {
+        if ($row['weight'] !== null) {
+            return false;
+        }
+        $stmt = $pdo->prepare('UPDATE daily_logs SET weight = ? WHERE id = ?');
+        $stmt->execute([$weightLb, $row['id']]);
+        return true;
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO daily_logs (log_date, weight) VALUES (?, ?)');
+    $stmt->execute([$date, $weightLb]);
+    return true;
+}
+
 // Was duplicated separately in export.php and debug.php — consolidated
 // here since more files (the new api/*.php endpoints) now need it too.
 function get_setting($pdo, $key) {

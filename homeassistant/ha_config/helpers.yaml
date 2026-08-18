@@ -24,12 +24,22 @@ input_datetime:
     name: "Lucius: GoDaddy last attempt"
     has_date: true
     has_time: true
+  lucius_bodycomp_last_success:
+    name: "Lucius: Body Composition Import last success"
+    has_date: true
+    has_time: true
+  lucius_bodycomp_last_attempt:
+    name: "Lucius: Body Composition Import last attempt"
+    has_date: true
+    has_time: true
 
 input_boolean:
   lucius_oura_last_attempt_ok:
     name: "Lucius: Oura last attempt OK"
   lucius_godaddy_last_attempt_ok:
     name: "Lucius: GoDaddy last attempt OK"
+  lucius_bodycomp_last_attempt_ok:
+    name: "Lucius: Body Composition Import last attempt OK"
 
 input_text:
   lucius_oura_last_error:
@@ -37,4 +47,7 @@ input_text:
     max: 255
   lucius_godaddy_last_error:
     name: "Lucius: GoDaddy last error"
+    max: 255
+  lucius_bodycomp_last_error:
+    name: "Lucius: Body Composition Import last error"
     max: 255

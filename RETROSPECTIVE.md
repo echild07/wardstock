@@ -66,5 +66,5 @@ After enough real bugs were found only by running things live, Ward and Claude a
 
 - **GoDaddy side:** stable, versioned, fully built for everything decided so far (2.1.2 as of this writing).
 - **HA side:** system-test-confirmed working end to end (config, InfluxDB, Oura reachability, GoDaddy reachability+auth+version-sync all green) with the real 2.x InfluxDB add-on. The two real scheduled sync flows (Oura Sync, GoDaddy Pull) are built but not yet run for real — the next real milestone.
-- **Body Composition feature:** fully planned (`homeassistant/PLAN.md` §14), parsing library confirmed working via its own test flow, not yet built as a live flow.
+- **Body Composition feature:** built (`homeassistant/nodered/body_comp_import_flow.json` + `godaddy/app/api/weight_push.php`, packaged as 2.1.3) — same "reviewed carefully, never run against a live stack" status as the other two sync flows, plus one open design gap: a real export's row count isn't known ahead of time, and the flow's workaround (an oversized `readRange` request) hasn't been checked against a real oversized read.
 - **Two GoDaddy-side pages planned but not started:** a consolidated HA/Node-RED/Analytics status page (§15), and a weight trend chart using a deviation-from-average framing (§16).

@@ -213,7 +213,7 @@ Ward confirmed HA/InfluxDB is "our processing engine" for this. **Cross-referenc
 6. Add the HA-side status-panel entities and Lovelace card (§9) once both flows have real data flowing — remember they're two independent timestamps, not one.
 7. Grafana/correlation analytics come after data has had a few days to accumulate — not before.
 
-## 14. Body Composition Import (planned, not yet built)
+## 14. Body Composition Import (built — `nodered/body_comp_import_flow.json` + `godaddy/app/api/weight_push.php` — not yet run against a live stack, see `homeassistant/README.md`'s "What's verified vs. not")
 
 Ward's smart scale exports a `.xlsx` with far more than weight — 17 columns per reading, multiple readings possible per day, one specific device. This section covers pulling that data in, decided over several rounds of Q&A with Ward rather than assumed.
 
@@ -261,8 +261,6 @@ One point per day (after Rule 1), same write mechanism already proven working fo
 - **Not added to `export.php`'s selectable types, not part of the human-facing Export page.** Consistent with Ward's own framing (analysis data, not app-purpose data) and the existing precedent set by `medications` (pulled by HA, never human-exportable).
 - **Not part of the GoDaddy disaster-recovery pull (`pull_manual_data.php`).** There's nothing new for it to pull — the rich data never lands on GoDaddy in the first place, so InfluxDB's own backup story (whatever that ends up being — see §12's open question about `/share` backup coverage) is what actually protects this data, not the existing GoDaddy-pull mechanism.
 
-### Still genuinely open
-
 ### Officedocs read API — confirmed working, resolved
 
 `nodered/body_comp_xlsx_test.json` confirmed the real API over several precise rounds (ground-truth package inspection, then real errors correcting each wrong guess — not broad re-guessing):
@@ -275,6 +273,13 @@ One point per day (after Rule 1), same write mechanism already proven working fo
 - **One debugging gotcha worth remembering for any future flow that touches `msg._doc`:** never wire a debug node (or anything else) to display the *whole* message once `msg._doc` is present — the live ExcelJS workbook object has circular references by design (cells reference their parent worksheet, which references the workbook), which crashes Node-RED's own `JSON.stringify`-based debug display. Always narrow display to `msg.payload` specifically, never the full message, once `msg._doc` exists.
 
 This fully unblocks building the real Body Composition Import flow — no remaining unknowns about the parsing library itself.
+
+### Built — design choices made that weren't already decided above
+
+- **Row count is unknown ahead of time**, and `readRange` needs an explicit range — the real flow requests an oversized one (`A1:Q5000`) and filters out trailing empty rows itself, rather than reading the file twice (once to find the row count, once for the real range). Not verified against a real oversized-range read — worth confirming on first real test whether officedocs errors on an out-of-bounds range or just returns blank cells past the actual data.
+- **Per-day weight pushes to `api/weight_push.php` use Node-RED's core `split`/`join` nodes**, one HTTP call per collapsed day rather than one batch call (no batch endpoint exists — `weight_push.php` deliberately mirrors the existing single-item endpoints). The secrets object and job-start timestamp are carried across that loop via flow context (`flow.set`/`flow.get`), not msg passthrough — `join`'s handling of non-payload message properties across a group isn't reliably documented, so this sidesteps trusting it.
+- **`api/weight_push.php` reuses the existing endpoint pattern exactly** (token auth, `ha_sync_log` logging, same status-code taxonomy) — no new taxonomy needed. `push_weight_if_unset()` in `db.php` is the one place Rule 2 (never overwrite) is actually enforced.
+- **No SQL migration** — `daily_logs.weight` already existed, confirming §14's original "almost nothing touches GoDaddy" framing held all the way through the real build.
 
 ## 15. GoDaddy status page — HA / Node-RED / Analytics (planned, not yet built)
 

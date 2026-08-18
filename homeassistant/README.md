@@ -1,10 +1,11 @@
 # Lucius — Home Assistant piece
 
-Two Node-RED flows (§2 of `PLAN.md`) running on HAOS: an Oura sync (every
-4 hours, anchored 10am) and a GoDaddy manual-data pull (every 15 min).
-**Nothing in this folder has been run against a live stack — see the
-"What's verified vs. not" note at the bottom before trusting this in
-production.**
+Four Node-RED flows: an Oura sync (every 4 hours, anchored 10am), a
+GoDaddy manual-data pull (every 15 min), a Body Composition Import
+(daily, ~noon — PLAN.md §14), plus the System Test diagnostic flow
+(manual, not scheduled). **Nothing in this folder has been run against a
+live stack — see the "What's verified vs. not" note at the bottom before
+trusting this in production.**
 
 ## Setup order
 
@@ -65,33 +66,51 @@ already-working flow, then get copied over:
 
 ### 6. Import the Node-RED flows
 In Node-RED: Menu → Import → paste the contents of
-`nodered/oura_sync_flow.json`, `nodered/godaddy_pull_flow.json`, and
-`nodered/system_test_flow.json` (three separate imports).
+`nodered/oura_sync_flow.json`, `nodered/godaddy_pull_flow.json`,
+`nodered/body_comp_import_flow.json`, and `nodered/system_test_flow.json`
+(four separate imports).
+
+Also create the two folders the Body Composition Import flow expects
+(via Studio Code Server, Samba, or SSH — same access you used for step
+4): `/share/lucius_body_comp_import/` (drop your scale app's `.xlsx`
+exports here) and `/share/lucius_body_comp_import/processed/` (the flow
+creates this on first run via the move-file node's `createDir` option,
+but it's fine to make it yourself ahead of time too).
 
 **Expect a warning right after importing:** *"[Lucius - Oura Sync] Call
 HA service (set helper entity) (api-call-service)"* and the same for the
-GoDaddy Pull flow. This is normal, not a sign anything went wrong — these
-two `api-call-service` nodes target the HA helper entities that don't
-exist yet until step 7, and their `Server` connection field can't be
-pre-filled from the flow JSON (Node-RED doesn't know your HA server
-connection details in advance). It'll clear on its own once you've done
-step 7 and set each node's `Server` field (see the checklist below) — no
-need to fix it right now if you're still mid-setup.
+GoDaddy Pull and Body Composition Import flows. This is normal, not a
+sign anything went wrong — these `api-call-service` nodes target HA
+helper entities that don't exist yet until step 7, and their `Server`
+connection field can't be pre-filled from the flow JSON (Node-RED
+doesn't know your HA server connection details in advance). It'll clear
+on its own once you've done step 7 and set each node's `Server` field
+(see the checklist below) — no need to fix it right now if you're still
+mid-setup.
 
 **Before deploying:**
 - Configure each `http request` node's method/URL if your Node-RED
   version needs it set explicitly rather than picked up from `msg.url`/
   `msg.method` (varies by version — check a node's config panel).
-- Configure both `api-call-service` nodes' HA server connection (the `Server` field) — the system test flow doesn't have one of these, it only makes HTTP calls. This is what actually clears the warning above; also worth remembering it needs re-doing after every re-import, since a fresh import creates new node instances that don't carry over a previously-set connection.
+- Configure all three scheduled flows' `api-call-service` nodes' HA server connection (the `Server` field) — the system test flow doesn't have one of these, it only makes HTTP calls. This is what actually clears the warning above; also worth remembering it needs re-doing after every re-import, since a fresh import creates new node instances that don't carry over a previously-set connection.
 - Double-check the Oura flow's inject node's cron expression
-  (`0 10,14,18,22,2,6 * * *`) actually took — inject-node scheduling UI
-  has changed across Node-RED versions.
+  (`0 10,14,18,22,2,6 * * *`) and the Body Composition Import flow's
+  (`0 12 * * *`) actually took — inject-node scheduling UI has changed
+  across Node-RED versions.
 - Confirm the `file`/`file in` nodes' paths (`/share/lucius_secrets.json`,
   `/share/lucius_archive/latest_manual_data.json`) match where you
   actually put the secrets file in step 4 — these are the nodes that
   replaced the `require('fs')` bug from the first version of these
   flows, and their paths are just as important to get right as any
   `http request` node's URL.
+- Body Composition Import specifically: the `exceljs` nodes require the
+  `node-red-contrib-officedocs` palette package (Manage Palette) —
+  already confirmed installed and working via `nodered/body_comp_xlsx_test.json`,
+  but a fresh Node-RED instance won't have it yet. Its read API needs a
+  known row range (`readRange`); this flow requests an oversized one
+  (`A1:Q5000`) and filters out the trailing empty rows itself, since a
+  real export's exact row count isn't known ahead of time — worth
+  watching on the first real run (see the flow's own tab info note).
 
 ### 7. Add the HA helper entities and dashboard
 **Note: `ha_config/` here is just this project's folder name for these two files — it is not, and does not correspond to, any real directory on your HA box** (not the same thing as the real `/config` from earlier steps). You're copying the *text inside* these two files into HA's actual configuration, not moving `ha_config/` itself anywhere.
@@ -114,12 +133,16 @@ a scheduled job — re-run it any time something seems off, including
 after any future config or version change on either side.
 
 ### 9. First real sync test
-Once the system test passes, manually trigger each of the two sync
-flows (click their inject nodes) rather than waiting for the schedule.
-Check: did `ha_sync_log` on GoDaddy get a new row (`oura_sync.php`'s HA
-Sync Status box, or `oura_test.php` for full history)? Did InfluxDB
-receive data (`Data Explorer` in its UI)? Did the HA helper entities
-update?
+Once the system test passes, manually trigger each of the three sync
+flows (click their inject nodes) rather than waiting for the schedule —
+for Body Composition Import, drop a real `.xlsx` export into
+`/share/lucius_body_comp_import/` first. Check: did `ha_sync_log` on
+GoDaddy get a new row (`oura_sync.php`'s HA Sync Status box, or
+`oura_test.php` for full history)? Did InfluxDB receive data (`Data
+Explorer` in its UI)? Did the HA helper entities update? For Body
+Composition Import specifically, also check that the file moved into
+`/share/lucius_body_comp_import/processed/` and that `daily_logs.weight`
+picked up a value only on days that didn't already have one.
 
 ## What's verified vs. not
 
@@ -130,7 +153,7 @@ reviewed carefully.
 
 **Not verified — built from the proven PHP logic and Oura's documented
 behavior, but never run against a live Node-RED/InfluxDB/Oura stack:**
-all three flow JSON files. Specific things most likely to need real fixing,
+all four flow JSON files. Specific things most likely to need real fixing,
 based on how much trouble the *same* underlying logic caused the first
 time it was built in PHP:
 - The date-window Oura query logic (function node "Prepare Oura API
@@ -150,6 +173,7 @@ time it was built in PHP:
   guessing at the newer per-domain node names).
 - InfluxDB line-protocol escaping in the function nodes — reviewed for
   correctness but not run against a real InfluxDB write endpoint.
+- **Body Composition Import's extra unverified surface, on top of everything above:** the oversized `readRange` request (`A1:Q5000`, filtering trailing empty rows itself rather than knowing the real row count ahead of time — see the flow's own tab info); the `split`/`join` loop used to POST each collapsed day's weight to `api/weight_push.php` one at a time (uses flow context, not msg passthrough, to carry the secrets/job-start-time across the loop — a deliberate choice to avoid relying on `join`'s less-predictable handling of non-payload message properties, but the loop itself has never run); and the shell command built to `mv` processed files into `processed/` (quoting handles spaces in filenames, not tested against a real filename with, say, an apostrophe in it).
 - **Filesystem access rewritten twice, both from real testing.** First: all file reads/writes (secrets, disaster-recovery archive) originally used `require('fs')` inside function-node code, which doesn't work in a stock Node-RED Function node at all (sandboxed context, no `require()` — not version drift like the `ha-entity` issue, this has never worked). Fixed by moving all filesystem access to core `file`/`file in` nodes. Second, found immediately after on the very first real test: those nodes originally pointed at `/config`, which inside the **Node-RED add-on's own container is a different directory** than Home Assistant's real config folder — several HA add-ons, Node-RED included, have their own internal working directory that's also confusingly called `/config`. Every path now points at `/share` instead (HA's actual mechanism for sharing files between add-ons) — confirmed against Ward's real container listing, not guessed. `createDir` on the archive-write node (replacing the old `fs.mkdirSync` call) still hasn't been confirmed to actually create `/share/lucius_archive/` on a first run — worth watching for on the next real test.
 
 Budget real debugging time for the Node-RED side, the same way the GoDaddy
