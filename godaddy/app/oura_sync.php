@@ -116,7 +116,7 @@ foreach (['oura_push', 'pull_manual_data', 'status', 'weight_push', 'status_push
       <?php endforeach; ?>
     </tbody>
   </table>
-  <p class="hint">Fuller history on <a href="oura_test.php">Connection test</a>.</p>
+  <p class="hint">Fuller history on <a href="oura_test.php">Connection test</a>. Full HA/Node-RED/Analytics view on <a href="status.php">System Status</a>.</p>
 
   <?php if (!$tokens): ?>
     <p class="hint">Not connected yet.</p>

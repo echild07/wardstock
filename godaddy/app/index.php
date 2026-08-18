@@ -169,7 +169,7 @@ function som_pill($value, $href, $somLabels, $icon) {
   <?php include __DIR__ . '/partials_nav.php'; ?>
 
   <h3 class="section-label">Last 7 days</h3>
-  <p class="hint" style="margin-top:-10px;"><a href="weight_trend.php">View weight trend (last 2 months) →</a></p>
+  <p class="hint" style="margin-top:-10px;"><a href="weight_trend.php">View weight trend (last 2 months) →</a> · <a href="status.php">System status (HA/Node-RED) →</a></p>
   <div class="week-summary">
     <?php foreach ($days as $day):
         $dayIncCount = $incByDay[$day] ?? 0;

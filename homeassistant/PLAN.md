@@ -281,7 +281,7 @@ This fully unblocks building the real Body Composition Import flow — no remain
 - **`api/weight_push.php` reuses the existing endpoint pattern exactly** (token auth, `ha_sync_log` logging, same status-code taxonomy) — no new taxonomy needed. `push_weight_if_unset()` in `db.php` is the one place Rule 2 (never overwrite) is actually enforced.
 - **No SQL migration** — `daily_logs.weight` already existed, confirming §14's original "almost nothing touches GoDaddy" framing held all the way through the real build.
 
-## 15. GoDaddy status page — HA / Node-RED / Analytics (planned, not yet built)
+## 15. GoDaddy status page — HA / Node-RED / Analytics (built — `godaddy/app/status.php` + `api/status_push.php` + `nodered/status_heartbeat_flow.json` — not yet run against a live stack)
 
 Since GoDaddy is the only always-reachable, always-open UI in this whole project (established back in §7/§8's reasoning), Ward wants a single status page there showing enough to know whether he needs to log into HA/Node-RED at all — not full diagnostics, just "is something wrong, and where."
 
@@ -307,6 +307,14 @@ Reusing the existing HA helper entities rather than having every flow separately
 - **New table**, e.g. `system_status_reports` — one row per (category, component), upserted on every push: `last_run_at`, `last_status`, `last_error`, `expected_frequency_minutes` (used to compute overdue), `reported_at`.
 - **New endpoint**, `api/status_push.php` — token-authenticated, same pattern as everything else, logs to `ha_sync_log` like the others.
 - **New page**, e.g. `status.php` — the actual three-category display, reading `system_status_reports`, computing "overdue" at render time by comparing `last_run_at` + `expected_frequency_minutes` against now.
+
+### Built — design choices made that weren't already decided above
+
+- **Heartbeat interval set to 15 minutes** (this section's own draft said "15–30 min, TBD") — matches the tightest existing schedule (GoDaddy Pull), no strong reason to go slower.
+- **The "HA" category's `/api/config` enrichment (mentioned above as worth adding) is deliberately NOT implemented.** It would need either a Supervisor API token or a manually-managed long-lived HA access token — neither otherwise needed by this project — and guessing at that auth mechanism without a live instance to confirm against felt like exactly the kind of unverified assumption this project has been burned by before (§2's `require('fs')` and `/config` lessons). Instead, `ha_core`'s signal is simply the heartbeat flow's own successful execution — real signal, since HA/Node-RED going down means this flow stops running and `ha_core` goes overdue on `status.php`, which **is** the answer to "is HA up." Flagged as an open follow-up, not a silent gap — needs Ward's call on which auth approach he'd rather set up, same pattern as §3's two-config-files and §8's Nabu Casa/Tailscale decisions.
+- **System Test isn't reported on `status.php`.** It's manual-only and (unlike the three scheduled flows) never wrote any HA helper entities to read in the first place — nothing persists for a heartbeat to pick up. Not treated as a gap to fix silently; if per-run System Test history matters on the status page later, it would need its own helper entities added first.
+- **Overdue formula:** `elapsed > expected_frequency_minutes + max(15, expected * 0.25)` — this section's draft only gave illustrative examples ("~4.5h" for a 4h schedule, "~20min" for a 15min one) without a formula; this is a reasonable approximation that lands close to both examples, not a value Ward specified exactly.
+- **`system_status_snapshot`'s InfluxDB fields:** just `status_ok` (1/0) per component per run, tagged by `category`/`component` — enough for "how often has X actually been failing" trend queries (Ward's stated reason for wanting this in InfluxDB at all) without duplicating everything `system_status_reports` already holds on the GoDaddy side.
 
 ## 16. GoDaddy weight chart page (planned, not yet built)
 

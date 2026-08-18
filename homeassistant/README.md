@@ -1,11 +1,12 @@
 # Lucius — Home Assistant piece
 
-Four Node-RED flows: an Oura sync (every 4 hours, anchored 10am), a
+Five Node-RED flows: an Oura sync (every 4 hours, anchored 10am), a
 GoDaddy manual-data pull (every 15 min), a Body Composition Import
-(daily, ~noon — PLAN.md §14), plus the System Test diagnostic flow
-(manual, not scheduled). **Nothing in this folder has been run against a
-live stack — see the "What's verified vs. not" note at the bottom before
-trusting this in production.**
+(daily, ~noon — PLAN.md §14), a Status Heartbeat (every 15 min — PLAN.md
+§15, feeds the GoDaddy-side `status.php`), plus the System Test
+diagnostic flow (manual, not scheduled). **Nothing in this folder has
+been run against a live stack — see the "What's verified vs. not" note
+at the bottom before trusting this in production.**
 
 ## Setup order
 
@@ -67,8 +68,8 @@ already-working flow, then get copied over:
 ### 6. Import the Node-RED flows
 In Node-RED: Menu → Import → paste the contents of
 `nodered/oura_sync_flow.json`, `nodered/godaddy_pull_flow.json`,
-`nodered/body_comp_import_flow.json`, and `nodered/system_test_flow.json`
-(four separate imports).
+`nodered/body_comp_import_flow.json`, `nodered/status_heartbeat_flow.json`,
+and `nodered/system_test_flow.json` (five separate imports).
 
 Also create the two folders the Body Composition Import flow expects
 (via Studio Code Server, Samba, or SSH — same access you used for step
@@ -103,6 +104,16 @@ mid-setup.
   replaced the `require('fs')` bug from the first version of these
   flows, and their paths are just as important to get right as any
   `http request` node's URL.
+- Status Heartbeat specifically: needs the `node-red-contrib-home-assistant-websocket`
+  palette's `api-current-state` node (read a single entity's state) — this
+  project has only used that palette for writes (`api-call-service`) so far,
+  never reads. Each of the 12 chained `api-current-state` nodes needs its
+  output property confirmed in the editor (should land on a specific
+  `msg.*` property, e.g. `msg.oura_last_success`, not overwrite
+  `msg.payload`) — the exact config field name for this has the same
+  cross-version-drift risk already documented for `api-call-service`
+  below. Also deploy `../godaddy/sql/alter_add_system_status_reports.sql`
+  and `set_version.sql` first — `api/status_push.php` needs that table.
 - Body Composition Import specifically: the `exceljs` nodes require the
   `node-red-contrib-officedocs` palette package (Manage Palette) —
   already confirmed installed and working via `nodered/body_comp_xlsx_test.json`,
@@ -133,16 +144,19 @@ a scheduled job — re-run it any time something seems off, including
 after any future config or version change on either side.
 
 ### 9. First real sync test
-Once the system test passes, manually trigger each of the three sync
-flows (click their inject nodes) rather than waiting for the schedule —
-for Body Composition Import, drop a real `.xlsx` export into
-`/share/lucius_body_comp_import/` first. Check: did `ha_sync_log` on
-GoDaddy get a new row (`oura_sync.php`'s HA Sync Status box, or
-`oura_test.php` for full history)? Did InfluxDB receive data (`Data
-Explorer` in its UI)? Did the HA helper entities update? For Body
+Once the system test passes, manually trigger each of the four
+scheduled flows (click their inject nodes) rather than waiting for the
+schedule — for Body Composition Import, drop a real `.xlsx` export into
+`/share/lucius_body_comp_import/` first, and trigger Status Heartbeat
+*after* the other three so it has real entity values to read. Check: did
+`ha_sync_log` on GoDaddy get a new row (`oura_sync.php`'s HA Sync Status
+box, or `oura_test.php` for full history)? Did InfluxDB receive data
+(`Data Explorer` in its UI)? Did the HA helper entities update? For Body
 Composition Import specifically, also check that the file moved into
 `/share/lucius_body_comp_import/processed/` and that `daily_logs.weight`
-picked up a value only on days that didn't already have one.
+picked up a value only on days that didn't already have one. For Status
+Heartbeat, check `status.php` on GoDaddy shows all four components with
+real timestamps, not "never reported."
 
 ## What's verified vs. not
 
@@ -153,7 +167,7 @@ reviewed carefully.
 
 **Not verified — built from the proven PHP logic and Oura's documented
 behavior, but never run against a live Node-RED/InfluxDB/Oura stack:**
-all four flow JSON files. Specific things most likely to need real fixing,
+all five flow JSON files. Specific things most likely to need real fixing,
 based on how much trouble the *same* underlying logic caused the first
 time it was built in PHP:
 - The date-window Oura query logic (function node "Prepare Oura API
@@ -174,6 +188,7 @@ time it was built in PHP:
 - InfluxDB line-protocol escaping in the function nodes — reviewed for
   correctness but not run against a real InfluxDB write endpoint.
 - **Body Composition Import's extra unverified surface, on top of everything above:** the oversized `readRange` request (`A1:Q5000`, filtering trailing empty rows itself rather than knowing the real row count ahead of time — see the flow's own tab info); the `split`/`join` loop used to POST each collapsed day's weight to `api/weight_push.php` one at a time (uses flow context, not msg passthrough, to carry the secrets/job-start-time across the loop — a deliberate choice to avoid relying on `join`'s less-predictable handling of non-payload message properties, but the loop itself has never run); and the shell command built to `mv` processed files into `processed/` (quoting handles spaces in filenames, not tested against a real filename with, say, an apostrophe in it).
+- **Status Heartbeat's extra unverified surface:** the 12 chained `api-current-state` reads (this project has only used this palette for writes so far); and a deliberate scope decision, not a bug — the "HA" category's signal is just this flow's own successful execution, not a real `/api/config` call, since that would need an auth mechanism (Supervisor token or long-lived access token) not otherwise confirmed against a live instance. See `PLAN.md` §15's "Built" note.
 - **Filesystem access rewritten twice, both from real testing.** First: all file reads/writes (secrets, disaster-recovery archive) originally used `require('fs')` inside function-node code, which doesn't work in a stock Node-RED Function node at all (sandboxed context, no `require()` — not version drift like the `ha-entity` issue, this has never worked). Fixed by moving all filesystem access to core `file`/`file in` nodes. Second, found immediately after on the very first real test: those nodes originally pointed at `/config`, which inside the **Node-RED add-on's own container is a different directory** than Home Assistant's real config folder — several HA add-ons, Node-RED included, have their own internal working directory that's also confusingly called `/config`. Every path now points at `/share` instead (HA's actual mechanism for sharing files between add-ons) — confirmed against Ward's real container listing, not guessed. `createDir` on the archive-write node (replacing the old `fs.mkdirSync` call) still hasn't been confirmed to actually create `/share/lucius_archive/` on a first run — worth watching for on the next real test.
 
 Budget real debugging time for the Node-RED side, the same way the GoDaddy

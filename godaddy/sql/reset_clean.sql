@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS oura_tokens;
 DROP TABLE IF EXISTS app_settings;
 DROP TABLE IF EXISTS app_user;
 DROP TABLE IF EXISTS ha_sync_log;
+DROP TABLE IF EXISTS system_status_reports;
 
 
 CREATE TABLE IF NOT EXISTS incidents (
@@ -126,8 +127,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
     setting_value VARCHAR(255)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '2.1')
-ON DUPLICATE KEY UPDATE setting_value = '2.1';
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '2.2')
+ON DUPLICATE KEY UPDATE setting_value = '2.2';
 
 CREATE TABLE IF NOT EXISTS app_user (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -144,4 +145,17 @@ CREATE TABLE IF NOT EXISTS ha_sync_log (
     status_code VARCHAR(30) NOT NULL,    -- success / auth_invalid / malformed_request /
                                           -- validation_error / db_error / unknown_error
     detail TEXT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS system_status_reports (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(20) NOT NULL,
+    component VARCHAR(50) NOT NULL,
+    last_run_at DATETIME NULL,
+    last_status VARCHAR(20) NULL,
+    last_error TEXT NULL,
+    detail TEXT NULL,
+    expected_frequency_minutes INT NULL,
+    reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY category_component (category, component)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
