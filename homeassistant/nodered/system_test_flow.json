@@ -1,0 +1,209 @@
+[
+  {
+    "id": "tab_system_test",
+    "type": "tab",
+    "label": "Lucius - System Test",
+    "disabled": false,
+    "info": "Manual diagnostic flow \u2014 click the inject node to run. Checks, in order: (1) the secrets config file loads and has every required key populated, (2) generic internet reachability, (3) InfluxDB reachability, (4) Oura's API reachability, (5) GoDaddy's api/status.php reachability + auth + version-sync. Results print to the debug sidebar as one summary. Does NOT run on a schedule \u2014 this is a manual health check, not a monitoring job.\n\nUNTESTED, same caveat as the other two flows \u2014 built carefully but never run against a live stack. See homeassistant/README.md."
+  },
+  {
+    "id": "n_test_trigger",
+    "type": "inject",
+    "z": "tab_system_test",
+    "name": "Run System Test",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 80,
+    "wires": [
+      [
+        "n_test_read_secrets_file"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_load_config",
+    "type": "function",
+    "z": "tab_system_test",
+    "name": "1b. Parse config, start test",
+    "func": "// msg.payload is the raw file text, read by the preceding \"file in\" core\n// node \u2014 no require('fs') needed at all. Function nodes run in a\n// sandboxed context that does NOT expose Node.js's require() by default;\n// this was the actual bug (not a version-drift issue like the ha-entity\n// one \u2014 plain require() has never worked in a stock Function node).\nmsg.results = [];\nlet secrets = null;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    msg.results.push({ check: 'Config file', pass: false, detail: 'Could not read/parse /share/lucius_secrets.json: ' + e.message + ' (if this is a \"file not found\" style error from the file-in node itself rather than a JSON error, the path is wrong or the file does not exist yet)' });\n}\n\nif (secrets) {\n    const required = ['godaddy_base_url', 'godaddy_api_sync_token', 'oura_client_id',\n        'oura_client_secret', 'oura_access_token', 'oura_refresh_token',\n        'influxdb_url', 'influxdb_org', 'influxdb_bucket', 'influxdb_token'];\n    const missing = required.filter(k => !secrets[k] || String(secrets[k]).trim() === '');\n\n    // Beyond \"present\" \u2014 catch placeholder text left over from\n    // lucius_secrets.json.example, which is technically non-empty and\n    // would otherwise pass silently. This is a real gap found live: an\n    // unreplaced placeholder cost a long investigation because every\n    // other check (including this one) reported healthy. Two checks:\n    // (1) any leftover .example placeholder language, (2) the sync\n    // token specifically should be exactly 64 hex characters, matching\n    // the real generated format \u2014 anything else is not the real value.\n    const placeholderMarkers = ['PASTE', 'YOUR ', ' HERE', 'EXAMPLE', 'CHANGE_ME', 'TODO'];\n    const looksLikePlaceholder = (val) => {\n        const upper = String(val).toUpperCase();\n        return placeholderMarkers.some(marker => upper.includes(marker));\n    };\n    const placeholderKeys = required.filter(k => secrets[k] && looksLikePlaceholder(secrets[k]));\n\n    const tokenVal = secrets['godaddy_api_sync_token'] || '';\n    const tokenFormatOk = /^[a-f0-9]{64}$/i.test(tokenVal);\n\n    if (missing.length) {\n        msg.results.push({ check: 'Config file', pass: false, detail: 'Missing/empty keys: ' + missing.join(', ') });\n    } else if (placeholderKeys.length) {\n        msg.results.push({ check: 'Config file', pass: false, detail: 'These still contain placeholder text from the .example file, not real values: ' + placeholderKeys.join(', ') });\n    } else if (!tokenFormatOk) {\n        msg.results.push({ check: 'Config file', pass: false, detail: 'godaddy_api_sync_token is present but is ' + tokenVal.length + ' characters \u2014 the real value should be exactly 64 hex characters. Check it was pasted correctly and completely.' });\n    } else {\n        msg.results.push({ check: 'Config file', pass: true, detail: 'All ' + required.length + ' required keys present, no placeholder text detected, sync token format looks correct' });\n    }\n}\n\nmsg.secrets = secrets || {};\n\nmsg.url = 'https://clients3.google.com/generate_204';\nmsg.method = 'GET';\nmsg.headers = {};\nreturn msg;",
+    "outputs": 1,
+    "x": 380,
+    "y": 80,
+    "wires": [
+      [
+        "n_test_web_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_web_http",
+    "type": "http request",
+    "z": "tab_system_test",
+    "name": "Generic web check",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 620,
+    "y": 80,
+    "wires": [
+      [
+        "n_test_record_web"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_record_web",
+    "type": "function",
+    "z": "tab_system_test",
+    "name": "2. Record web + prepare InfluxDB check",
+    "func": "const code = msg.statusCode;\nconst pass = (code === 204 || code === 200);\nmsg.results.push({ check: 'Generic internet reachability', pass, detail: pass ? ('HTTP ' + code) : ('HTTP ' + code + ' or no response \u2014 check the HA box\\'s own internet connection') });\n\nconst base = (msg.secrets.influxdb_url || '').replace(/\\/$/, '');\nif (!base) {\n    msg.results.push({ check: 'InfluxDB reachability', pass: false, detail: 'influxdb_url not set in config \u2014 skipped' });\n    msg.skip_influx = true;\n} else {\n    msg.url = base + '/health';\n    msg.method = 'GET';\n    msg.headers = {};\n}\nreturn msg;",
+    "outputs": 1,
+    "x": 380,
+    "y": 140,
+    "wires": [
+      [
+        "n_test_influx_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_influx_http",
+    "type": "http request",
+    "z": "tab_system_test",
+    "name": "InfluxDB /health",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 620,
+    "y": 140,
+    "wires": [
+      [
+        "n_test_record_influx"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_record_influx",
+    "type": "function",
+    "z": "tab_system_test",
+    "name": "3. Record InfluxDB + prepare Oura check",
+    "func": "if (!msg.skip_influx) {\n    const code = msg.statusCode;\n    const status = msg.payload && msg.payload.status;\n    const pass = (code === 200 && status === 'pass');\n    msg.results.push({ check: 'InfluxDB reachability', pass, detail: pass ? 'healthy' : ('HTTP ' + code + ', status=' + status + ' \u2014 check influxdb_url and that the add-on is running') });\n}\n\n// Deliberately NO Authorization header \u2014 Oura returns 401 for an\n// unauthenticated request, which is actually the expected PASS result\n// here: it proves the network/DNS/TLS path to Oura's servers works,\n// without needing a real token for a pure reachability check (same\n// reasoning used in godaddy/app/oura_test.php's connectivity test).\nmsg.url = 'https://api.ouraring.com/v2/usercollection/personal_info';\nmsg.method = 'GET';\nmsg.headers = {};\nreturn msg;",
+    "outputs": 1,
+    "x": 380,
+    "y": 200,
+    "wires": [
+      [
+        "n_test_oura_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_oura_http",
+    "type": "http request",
+    "z": "tab_system_test",
+    "name": "Oura API (no auth)",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 620,
+    "y": 200,
+    "wires": [
+      [
+        "n_test_record_oura"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_record_oura",
+    "type": "function",
+    "z": "tab_system_test",
+    "name": "4. Record Oura + prepare GoDaddy check",
+    "func": "const code = msg.statusCode;\n// ANY real numeric status code = reached Oura's servers and got a real\n// response = PASS for reachability purposes, regardless of which\n// specific error code they use for an unauthenticated request (Oura\n// returned 400 in practice, not the 401 originally assumed here \u2014 real\n// testing found this, not documentation, so the check no longer guesses\n// at a specific code at all). 0/undefined/no response = genuine\n// network/DNS/TLS failure = the only real FAIL condition.\nconst pass = (typeof code === 'number' && code > 0);\nlet detail;\nif (pass) detail = 'reached (HTTP ' + code + ' \u2014 some error status is expected here since no token was sent on purpose; what matters is that a real response came back at all)';\nelse detail = 'no response \u2014 DNS/network/TLS failure reaching api.ouraring.com';\nmsg.results.push({ check: 'Oura API reachability', pass, detail });\n\nconst base = (msg.secrets.godaddy_base_url || '').replace(/\\/$/, '');\nconst token = msg.secrets.godaddy_api_sync_token;\nif (!base || !token) {\n    msg.results.push({ check: 'GoDaddy reachability', pass: false, detail: 'godaddy_base_url or godaddy_api_sync_token not set in config \u2014 skipped' });\n    msg.skip_godaddy = true;\n} else {\n    msg.url = base + '/api/status.php';\n    msg.method = 'GET';\n    msg.headers = { 'Authorization': 'Bearer ' + token };\n}\nreturn msg;",
+    "outputs": 1,
+    "x": 380,
+    "y": 260,
+    "wires": [
+      [
+        "n_test_godaddy_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_godaddy_http",
+    "type": "http request",
+    "z": "tab_system_test",
+    "name": "GoDaddy: GET status.php",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 620,
+    "y": 260,
+    "wires": [
+      [
+        "n_test_record_godaddy"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_record_godaddy",
+    "type": "function",
+    "z": "tab_system_test",
+    "name": "5. Record GoDaddy + build summary",
+    "func": "if (!msg.skip_godaddy) {\n    const code = msg.statusCode;\n    if (code === 200 && msg.payload && msg.payload.version_in_sync !== undefined) {\n        const inSync = msg.payload.version_in_sync;\n        msg.results.push({\n            check: 'GoDaddy reachability + auth',\n            pass: true,\n            detail: 'reached, token accepted, app version ' + msg.payload.app_version +\n                    (inSync ? ' (schema in sync)' : ' \u2014 SCHEMA OUT OF SYNC, run the pending sql/set_version.sql on GoDaddy')\n        });\n    } else if (code === 401) {\n        msg.results.push({ check: 'GoDaddy reachability + auth', pass: false, detail: 'reached GoDaddy, but token rejected (HTTP 401) \u2014 check godaddy_api_sync_token matches config.php\\'s API_SYNC_TOKEN exactly' });\n    } else if (!code) {\n        msg.results.push({ check: 'GoDaddy reachability + auth', pass: false, detail: 'no response \u2014 check godaddy_base_url and that the site is up' });\n    } else {\n        msg.results.push({ check: 'GoDaddy reachability + auth', pass: false, detail: 'unexpected HTTP ' + code });\n    }\n}\n\n// Final summary \u2014 one readable block for the debug sidebar.\nconst lines = msg.results.map(r => (r.pass ? '\\u2705' : '\\u274c') + '  ' + r.check + ' \\u2014 ' + r.detail);\nconst allPass = msg.results.every(r => r.pass);\nmsg.payload = (allPass ? '=== ALL CHECKS PASSED ===\\n' : '=== ' + msg.results.filter(r => !r.pass).length + ' CHECK(S) FAILED ===\\n') + lines.join('\\n');\nmsg.all_pass = allPass;\nreturn msg;",
+    "outputs": 1,
+    "x": 380,
+    "y": 320,
+    "wires": [
+      [
+        "n_test_debug"
+      ]
+    ]
+  },
+  {
+    "id": "n_test_debug",
+    "type": "debug",
+    "z": "tab_system_test",
+    "name": "System Test Results",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 630,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "n_test_read_secrets_file",
+    "type": "file in",
+    "z": "tab_system_test",
+    "name": "Read /share/lucius_secrets.json",
+    "filename": "/share/lucius_secrets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 260,
+    "y": 80,
+    "wires": [
+      [
+        "n_test_load_config"
+      ]
+    ]
+  }
+]
