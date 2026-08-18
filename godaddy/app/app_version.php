@@ -25,6 +25,6 @@
 define('APP_VERSION_NAME', 'Lucius');
 define('APP_VERSION_MAJOR', 2);
 define('APP_VERSION_SQL', 2);
-define('APP_VERSION_CODE', 0);
+define('APP_VERSION_CODE', 1);
 define('APP_VERSION_SCHEMA', sprintf('%d.%d', APP_VERSION_MAJOR, APP_VERSION_SQL));
 define('APP_VERSION', sprintf('%d.%d.%d', APP_VERSION_MAJOR, APP_VERSION_SQL, APP_VERSION_CODE));

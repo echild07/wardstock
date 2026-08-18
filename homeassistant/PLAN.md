@@ -316,7 +316,7 @@ Reusing the existing HA helper entities rather than having every flow separately
 - **Overdue formula:** `elapsed > expected_frequency_minutes + max(15, expected * 0.25)` — this section's draft only gave illustrative examples ("~4.5h" for a 4h schedule, "~20min" for a 15min one) without a formula; this is a reasonable approximation that lands close to both examples, not a value Ward specified exactly.
 - **`system_status_snapshot`'s InfluxDB fields:** just `status_ok` (1/0) per component per run, tagged by `category`/`component` — enough for "how often has X actually been failing" trend queries (Ward's stated reason for wanting this in InfluxDB at all) without duplicating everything `system_status_reports` already holds on the GoDaddy side.
 
-## 16. GoDaddy weight chart page (planned, not yet built)
+## 16. GoDaddy weight chart page (built — `godaddy/app/weight_deviation.php`)
 
 A new page — column/bar chart of weight over a selectable time range, with a specific, deliberate framing Ward asked for: **bars represent deviation from the *range's own average*, not absolute weight** — zero baseline is that average, bars extend up above it or down below it. Recalculated per range, not a fixed global average, so switching the date range changes what "average" (and therefore what counts as above/below) means.
 
@@ -325,4 +325,4 @@ A new page — column/bar chart of weight over a selectable time range, with a s
 - **Charting**: Chart.js via CDN — lightweight, no build step, fits how this project already loads fonts/libraries elsewhere (the LeeWard flyer's Google Fonts pattern). Tooltip on each bar should show both the deviation *and* the actual absolute weight — deviation alone, with no anchor, would be hard to read meaningfully at a glance.
 - Worth surfacing the actual average value as plain text somewhere on the page too (e.g. "Average: 233.4 lb over the last 30 days"), not just implied by the zero line.
 
-Both of these — the status page and the weight chart — are documentation only at this point, same as the rest of this plan. Nothing here has SQL, PHP, or Node-RED code written yet.
+**Built exactly as designed above** — no HA/Node-RED dependency, so unlike §14/§15 this one has no "reviewed but never run against a live stack" caveat; it's plain PHP reading `daily_logs.weight`, same kind of code as the rest of WardStock that's already live and working. Chart.js loaded via CDN (`cdn.jsdelivr.net`), matching the "lightweight, no build step" call already made in this section. Colors pulled from the app's existing CSS custom properties (`--accent`/`--muted`/`--text`/`--border`) at render time rather than hardcoded, so the chart stays visually consistent with the rest of the app without duplicating the palette.

@@ -94,7 +94,7 @@ if (count($points) >= 2) {
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
 
-  <p class="hint">Last 60 days, weight entries only (from the Daily Log's Weight section).</p>
+  <p class="hint">Last 60 days, weight entries only (from the Daily Log's Weight section). <a href="weight_deviation.php">View deviation-from-average chart →</a></p>
 
   <?php if (!$svg): ?>
     <p class="empty">Not enough weight entries in the last 60 days to chart a trend yet (<?= count($points) ?> so far — need at least 2).</p>
