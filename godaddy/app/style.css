@@ -136,6 +136,7 @@ textarea { resize: vertical; }
 
 .error { color: var(--danger); }
 .notice { color: var(--accent); }
+.notice-warning { color: var(--moderate); font-size: 0.9rem; }
 .notice-success {
   background: rgba(79, 122, 63, 0.2);
   border: 1px solid var(--mild);

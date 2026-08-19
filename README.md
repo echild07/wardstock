@@ -12,7 +12,7 @@ WardStock stays exactly where it is — reachable from anywhere, no dependency o
 
 ## Versioning
 
-**Current version: 2.2.4 "Lucius"** — project-wide, covering both pieces. Major version bumped from 1.x ("Sidroh") specifically to mark this expansion from a single GoDaddy app into a two-piece project. See `godaddy/README.md`'s Versioning section for the full `Major.SQL.Code` scheme (currently only tracked/applied on the GoDaddy piece, since the HA piece doesn't have a database of its own to version yet).
+**Current version: 2.2.5 "Lucius"** — project-wide, covering both pieces. Major version bumped from 1.x ("Sidroh") specifically to mark this expansion from a single GoDaddy app into a two-piece project. See `godaddy/README.md`'s Versioning section for the full `Major.SQL.Code` scheme (currently only tracked/applied on the GoDaddy piece, since the HA piece doesn't have a database of its own to version yet).
 
 ## Where to start
 

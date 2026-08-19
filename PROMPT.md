@@ -6,7 +6,7 @@ got here, and `godaddy/PROJECT_PLAN.md` / `homeassistant/PLAN.md` for the
 decision log behind any specific design choice. This file states what
 exists now, not why.
 
-**Current version: 2.2.4 "Lucius"**
+**Current version: 2.2.5 "Lucius"**
 
 ---
 
@@ -64,6 +64,7 @@ Deployed to `public_html/Wardstock/` (case-sensitive hosting — folder is
 | `oura_connect.php` / `oura_callback.php` / `oura_sync.php` | Oura OAuth2 flow + manual pull |
 | `oura_test.php` | Oura + HA-sync diagnostics |
 | `status.php` | HA/Node-RED/Analytics status view (reads `system_status_reports`) |
+| `about.php` | App purpose, version, architecture overview |
 | `privacy.php` / `terms.php` | Public, no-login pages (Oura registration requirement) |
 | `style.css` | All styling — dark theme, CSS custom properties (`--bg`, `--text`, `--muted`, `--accent`, `--danger`, `--mild`, `--moderate`, `--severe`, `--border`, etc.) |
 | `manifest.json` + icon PNGs | PWA home-screen install |
@@ -72,6 +73,7 @@ Deployed to `public_html/Wardstock/` (case-sensitive hosting — folder is
 | `api/status.php` | Token-auth. Reachability + version-sync check. |
 | `api/weight_push.php` | Token-auth. HA POSTs `{date, weight_lb}` — only writes if `daily_logs.weight` is currently NULL. |
 | `api/status_push.php` | Token-auth. HA POSTs a `{reports: [...]}` batch — upserts `system_status_reports`. |
+| `api/get_shared_config.php` | Token-auth. HA GETs `{oura_client_id, oura_client_secret}` — GoDaddy is the source of truth, HA no longer stores its own copy. |
 
 ## GoDaddy piece — database schema
 
@@ -130,11 +132,14 @@ add-on's own container that's a different, unrelated directory from HA's
 real config; use `/share`). Fields: `godaddy_base_url`,
 `godaddy_api_sync_token`, `oura_client_id`/`_secret`, `oura_access_token`/
 `_refresh_token`/`_expires_at`, `influxdb_url`/`_org`/`_bucket`/`_token`.
+Does **not** include `oura_client_id`/`oura_client_secret` — GoDaddy's
+`config.php` is the source of truth for those, fetched live via
+`api/get_shared_config.php` each Oura Sync run.
 
 Deliberately a **separate** file from `godaddy/config/config.php`, not a
-shared config — different trust domains. `API_SYNC_TOKEN` and the Oura
-client ID/secret are the only values duplicated between the two files and
-must be kept in sync manually.
+shared config — different trust domains. `API_SYNC_TOKEN` is the one
+value still manually copied between the two (unavoidable — it's the
+bootstrap credential that authenticates fetching everything else).
 
 ## Home Assistant piece — InfluxDB measurements
 

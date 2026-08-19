@@ -114,7 +114,7 @@ $active = 'export';
   <p class="hint">Downloading marks this moment as the new "last export" point, so your next "since last export" pull starts from here.</p>
   <p class="hint">Need to restore data — after a database reset, or catching up a fresh install — from a previous export? <a href="import.php">Import →</a></p>
 
-  <p class="hint" style="margin-top:32px; text-align:center;"><a href="debug.php">App / database version</a></p>
+  <p class="hint" style="margin-top:32px; text-align:center;"><a href="about.php">About WardStock</a> · <a href="debug.php">App / database version</a></p>
 </div>
 </body>
 </html>

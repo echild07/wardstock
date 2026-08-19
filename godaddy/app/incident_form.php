@@ -120,6 +120,28 @@ foreach ($medChanges as $m) {
     }
 }
 
+// Non-blocking overlap check (offered, Ward confirmed: yes, add it) — flags,
+// never prevents saving, since two incidents CAN legitimately overlap (e.g.
+// a cardiac episode noticed partway through an ongoing anxiety episode). A
+// missing end time is treated as a zero-duration point at the start time,
+// not an open-ended range — avoids false-positive warnings for the common
+// case of incidents logged without an end time.
+function incident_range($row) {
+    $start = strtotime($row['occurred_at']);
+    $end = !empty($row['ended_at']) ? strtotime($row['ended_at']) : $start;
+    return [$start, $end];
+}
+$overlapWith = [];
+if ($formData && !empty($formData['occurred_at'])) {
+    [$curStart, $curEnd] = incident_range($formData);
+    foreach ($sameDay as $s) {
+        [$oStart, $oEnd] = incident_range($s);
+        if ($curStart < $oEnd && $oStart < $curEnd) {
+            $overlapWith[] = $s;
+        }
+    }
+}
+
 $active = 'incidents';
 ?>
 <!doctype html>
@@ -176,6 +198,12 @@ $active = 'incidents';
         <label>End time (optional) <input type="datetime-local" name="ended_at" value="<?= htmlspecialchars($endedValue) ?>"></label>
         <label>Duration (minutes) <input type="number" min="0" name="duration_minutes" value="<?= val($formData, 'duration_minutes') ?>"></label>
       </div>
+      <?php if ($overlapWith): ?>
+        <p class="notice-warning">⚠ Overlaps in time with <?= count($overlapWith) === 1 ? 'another incident' : count($overlapWith) . ' other incidents' ?> logged this day:
+          <?php foreach ($overlapWith as $i => $o): ?><?= $i > 0 ? ', ' : '' ?><a href="incident_form.php?id=<?= (int)$o['id'] ?>"><?= $o['category'] === 'cardiac' ? 'Cardiac' : 'Anxiety' ?>, <?= htmlspecialchars(date('g:i A', strtotime($o['occurred_at']))) ?><?= $o['ended_at'] ? '–' . htmlspecialchars(date('g:i A', strtotime($o['ended_at']))) : '' ?></a><?php endforeach; ?>
+          — not a problem, just worth a look.
+        </p>
+      <?php endif; ?>
     </fieldset>
 
     <fieldset class="field-anxiety-only">

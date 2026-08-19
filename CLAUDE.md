@@ -4,7 +4,7 @@ Read this first. It points to the detailed docs rather than repeating them — c
 
 ## What this is
 
-A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.4 "Lucius"**.
+A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.5 "Lucius"**.
 
 ## Where the detail actually lives — read before making changes
 
@@ -27,6 +27,7 @@ Everything from the previous handoff (PROMPT.md, .gitignore/credential exposure,
 ## Conventions worth knowing before touching anything
 
 - **Versioning:** `Major.SQL.Code` — see `godaddy/README.md`. SQL number is the only one the database tracks; a code-only release needs no database step.
+- **Version bumps and git commit/push only happen when Ward explicitly says to push/release — never automatically after a change.** (Aug 2026, standing rule going forward.) Make the actual file edits as normal; leave them as uncommitted local changes otherwise. When Ward does say to push, bump `app_version.php` first (Code, or SQL if `sql/` changed this batch — see Versioning above), then commit and push. Several batches of unrelated work can accumulate locally between pushes; batch them into one coherent version bump rather than one per small change.
 - **Database upgrades are one cumulative file per major version line**, not per-release fragments — `sql/upgrade_from_<major>.0.0.sql`, idempotent, safe to run from any point in that line. See `godaddy/PROJECT_PLAN.md`'s Working Conventions for the full rule (adopted directly from Ward's feedback that multiple upgrade files per release wasn't user-friendly).
 - **Every live Node-RED flow gets a companion test/validation flow**, kept permanently (not delete-after-use) — adopted specifically because Node-RED's package ecosystem has repeatedly proven unpredictable. See `homeassistant/PLAN.md` §2.
 - **`config/` (GoDaddy) is deliberately excluded from routine re-uploads** — never overwrite it blindly when redeploying `app/`.

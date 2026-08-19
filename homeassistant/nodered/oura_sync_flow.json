@@ -4,7 +4,7 @@
     "type": "tab",
     "label": "Lucius - Oura Sync",
     "disabled": false,
-    "info": "Runs every 4 hours, anchored to 10am (10,14,18,22,2,6). Pulls high-fidelity Oura data into InfluxDB, pushes summary fields to GoDaddy, logs job start/finish to InfluxDB, updates HA status entities.\n\nUNTESTED \u2014 built from the proven PHP logic in godaddy/app/oura.php but never run against a live Node-RED/InfluxDB/Oura stack. Verify the schedule trigger's cron expression in the editor after import (Node-RED's inject-node schedule UI has changed across versions) and test each HTTP Request node's config against your actual Node-RED version before trusting it end to end."
+    "info": "Runs every 4 hours, anchored to 10am (10,14,18,22,2,6). Fetches oura_client_id/oura_client_secret fresh from GoDaddy's api/get_shared_config.php each run (PLAN.md \u00a73 \u2014 GoDaddy is the source of truth for these, no longer hand-copied locally), pulls high-fidelity Oura data into InfluxDB, pushes summary fields to GoDaddy, logs job start/finish to InfluxDB, updates HA status entities.\n\nUNTESTED \u2014 built from the proven PHP logic in godaddy/app/oura.php but never run against a live Node-RED/InfluxDB/Oura stack. Verify the schedule trigger's cron expression in the editor after import (Node-RED's inject-node schedule UI has changed across versions) and test each HTTP Request node's config against your actual Node-RED version before trusting it end to end."
   },
   {
     "id": "n_oura_trigger",
@@ -40,6 +40,52 @@
     "outputs": 1,
     "x": 400,
     "y": 80,
+    "wires": [
+      [
+        "n_oura_fetch_shared_config_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_fetch_shared_config_prep",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Prepare get_shared_config.php request",
+    "func": "// GoDaddy is now the source of truth for oura_client_id/oura_client_secret\n// (PLAN.md \u00a73, decided \u2014 no longer hand-copied into lucius_secrets.json).\n// Fetched fresh every run rather than only when a token refresh is\n// actually needed, to keep this simple \u2014 one extra cheap call, no\n// branching on whether the fetch is 'needed' this run.\nmsg.url = msg.secrets.godaddy_base_url + '/api/get_shared_config.php';\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.godaddy_api_sync_token };\nreturn msg;",
+    "outputs": 1,
+    "x": 660,
+    "y": 40,
+    "wires": [
+      [
+        "n_oura_fetch_shared_config_http"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_fetch_shared_config_http",
+    "type": "http request",
+    "z": "tab_oura_sync",
+    "name": "GoDaddy: GET get_shared_config.php",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 930,
+    "y": 40,
+    "wires": [
+      [
+        "n_oura_merge_shared_config"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_merge_shared_config",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Merge fetched values into msg.secrets",
+    "func": "// If this fetch fails for any reason (GoDaddy unreachable, auth issue),\n// fall back to whatever's still in the local secrets file rather than\n// hard-failing the whole flow \u2014 the local .example no longer expects\n// these fields to be filled in, but an install that still has stale\n// local values (from before this change) keeps working as a fallback.\nconst resp = msg.payload;\nif (resp && resp.oura_client_id && resp.oura_client_secret) {\n    msg.secrets.oura_client_id = resp.oura_client_id;\n    msg.secrets.oura_client_secret = resp.oura_client_secret;\n} else {\n    node.warn('get_shared_config.php did not return usable values \u2014 falling back to local secrets file (if any). Response: ' + JSON.stringify(resp));\n}\nreturn msg;",
+    "outputs": 1,
+    "x": 660,
+    "y": 100,
     "wires": [
       [
         "n_oura_write_start_point"

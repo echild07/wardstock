@@ -35,7 +35,10 @@ Everything in `../godaddy/` needs to be live first — the new
 Copy `lucius_secrets.json.example` (in this folder) to `/share/lucius_secrets.json`
 on the HA box (via the Studio Code Server add-on, Samba, or SSH). Fill in every
 field **except** `oura_access_token`/`oura_refresh_token`/`oura_expires_at`
-— those come from step 5.
+— those come from step 5 — **and except `oura_client_id`/`oura_client_secret`,
+which aren't in the file at all anymore.** GoDaddy's `config.php` is now the
+source of truth for those two; the Oura Sync flow fetches them live each run
+via `api/get_shared_config.php` (PLAN.md §3).
 
 **Use `/share`, not `/config`, and not whatever `/config` shows up as inside
 the Node-RED add-on specifically** — this tripped Ward up on the first real
