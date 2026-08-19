@@ -9,3 +9,7 @@ Thumbs.db
 
 # Generated marketing PDF — built on demand, not checked in (see marketing/README.md)
 marketing/*.pdf
+
+# Working drop folders (see CLAUDE.md) — never part of the app, never committed
+/ForClaude/
+/ForWard/
