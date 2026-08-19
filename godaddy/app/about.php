@@ -69,7 +69,7 @@ $dbVersion = get_setting($pdo, 'db_version');
       <div class="founder-card">
         <img src="leeward-badge.png" alt="LeeWard" class="founder-photo">
         <h4>LeeWard</h4>
-        <p class="hint">The company behind WardStock and the Lucius project. <em>Leeward, n. — the side sheltered from the wind; where a ship finds its steadiest water.</em></p>
+        <p class="hint">The company behind WardStock and the wherewhen engine. <em>Leeward, n. — the side sheltered from the wind; where a ship finds its steadiest water.</em></p>
         <p class="hint"><a href="marketing.html">See the LeeWard / WardStock flyer →</a></p>
       </div>
     </div>
@@ -79,30 +79,51 @@ $dbVersion = get_setting($pdo, 'db_version');
     <legend>Founders</legend>
     <div class="founders">
       <div class="founder-card">
-        <img src="leeward-badge.png" alt="Ward Bowman" class="founder-photo">
+        <img src="leeward-badge.png" alt="Ward Bowman — click to read bio" class="founder-photo" data-founder="ward" tabindex="0" role="button" aria-controls="founder-bio-display">
         <h4>Ward Bowman</h4>
       </div>
       <div class="founder-card">
-        <img src="leeward-badge.png" alt="Lisa Bowman" class="founder-photo">
+        <img src="leeward-badge.png" alt="Lisa Bowman — click to read bio" class="founder-photo" data-founder="lisa" tabindex="0" role="button" aria-controls="founder-bio-display">
         <h4>Lisa Bowman</h4>
       </div>
     </div>
 
-    <div class="founder-bio">
+    <div id="founder-bio-display" class="founder-bio">
+      <p class="hint">Click a founder's photo to read their bio.</p>
+    </div>
+
+    <template id="bio-ward">
       <h5>Ward Bowman</h5>
       <p>Ward Bowman has spent 30-plus years building SCADA systems, Historians, MES platforms, and some of the earliest IIoT solutions in the industry, across consumer goods, life sciences, and oil and gas. He's currently at <strong>Rockwell Automation</strong>, running go-to-market strategy for software solutions. Before that: five and a half years as Senior Director of Product Management at <strong>PTC</strong>, and seventeen years at <strong>GE</strong>, where he built a wireless monitoring business years before "IIoT" was a word anyone used, and was later named <strong>GE Fanuc Engineer of the Year in 2009</strong>. People who've worked with him tend to say the same two things: he clears bureaucracy out of his team's way, and he's usually already solving tomorrow's problem while everyone else is on today's.</p>
       <p>He served <strong>15 years in the U.S. Army and Massachusetts Army National Guard</strong>, in Air Defense Artillery and Combat Engineering, and holds a <strong>B.S. in Computer Engineering from UMass Dartmouth</strong>. WardStock is the same idea on a much smaller scale — built to tell the truth about what's happening, and stay out of the way otherwise.</p>
-    </div>
+    </template>
 
-    <div class="founder-bio">
+    <template id="bio-lisa">
       <h5>Lisa Bowman</h5>
       <p class="hint">Bio coming soon.</p>
-    </div>
+    </template>
   </fieldset>
+
+  <script>
+  (function () {
+    var display = document.getElementById('founder-bio-display');
+    document.querySelectorAll('.founder-photo[data-founder]').forEach(function (img) {
+      function show() {
+        var tpl = document.getElementById('bio-' + img.getAttribute('data-founder'));
+        if (tpl) display.innerHTML = tpl.innerHTML;
+      }
+      img.addEventListener('click', show);
+      img.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(); }
+      });
+    });
+  })();
+  </script>
 
   <fieldset>
     <legend>Built with</legend>
     <p class="hint">No framework — plain PHP, PDO/MySQL, vanilla CSS/JS. Built with Claude Code.</p>
+    <p class="hint">Claude Sonnet 5 (Anthropic) did the actual writing here — schema, PHP, the Node-RED flows, and the debugging that came with all three. Whatever's solid about this app came out of that; whatever's still rough is probably just a corner we hadn't gotten to yet.</p>
   </fieldset>
 </div>
 </body>

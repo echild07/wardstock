@@ -335,7 +335,7 @@
     "type": "function",
     "z": "tab_bodycomp_import",
     "name": "Split entities for HA WebSocket node",
-    "func": "// Same fix as the other two flows \u2014 setting a helper entity is a\n// service call, not a direct state write. See godaddy_pull_flow.json's\n// equivalent node for the full explanation.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { domain: call.domain, service: call.service, target: call.target, payload: call.data };\n}).filter(Boolean);",
+    "func": "// Same fix as the other two flows \u2014 setting a helper entity is a\n// service call, not a direct state write. See godaddy_pull_flow.json's\n// equivalent node for the full explanation.\n//\n// FIX (Aug 2026): same schema fix as the other two flows \u2014 the newer\n// \"action\" node reads everything from msg.payload = { action, target,\n// data } instead of separate top-level domain/service/target/payload\n// properties. See the Oura Sync flow's equivalent comment for the full\n// explanation and the doc link.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
     "outputs": 1,
     "x": 460,
     "y": 620,
@@ -364,7 +364,7 @@
     "serviceType": "msg.service",
     "targetType": "msg.target",
     "dataFieldType": "msg.payload",
-    "comment": "Same required post-import check as the other two flows \u2014 set the Server field, confirm domain/service/target/data field types say 'msg.' in the editor rather than trusting the imported JSON blindly.",
+    "comment": "Same fix as the other two flows' equivalent node \u2014 stale domain/service/target/data properties below are leftover from an older node schema and unused now; the preceding function sends msg.payload = { action, target, data } instead, which the newer \"action\" node reads directly and which overrides this node's UI config regardless. Fine to leave Action/Targets/Data blank in the editor. Still MUST set manually per install: the 'Server' field.",
     "x": 220,
     "y": 620,
     "wires": [ [] ]

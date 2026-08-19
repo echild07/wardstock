@@ -94,6 +94,7 @@ $icons = [
     'alcohol' => '🍷',
     'medication' => '💊',
     'weight' => '⚖️',
+    'sleep' => '😴',
     'mind' => '🧠',
 ];
 
@@ -134,6 +135,13 @@ function weight_pill($value, $href, $icon) {
     if ($value === null) return '<a class="pill pill-bad" href="' . htmlspecialchars($href) . '">' . $icon . '</a>';
     return '<a class="pill pill-good" href="' . htmlspecialchars($href) . '">' . $icon . ' ' . htmlspecialchars(fmt_amount($value)) . '</a>';
 }
+// Same red/green shape as weight_pill — sleep_efficiency is Oura's own
+// 0-100 score (written into daily_logs by oura_push.php/oura.php, not
+// hand-entered), so no reason for the 3-tier consumption_pill scale here.
+function sleep_pill($value, $href, $icon) {
+    if ($value === null) return '<a class="pill pill-bad" href="' . htmlspecialchars($href) . '">' . $icon . '</a>';
+    return '<a class="pill pill-good" href="' . htmlspecialchars($href) . '">' . $icon . ' ' . htmlspecialchars((int)$value) . '%</a>';
+}
 function daily_href($log, $day, $anchor) {
     $base = $log ? 'daily_form.php?id=' . (int)$log['id'] : 'daily_form.php?date=' . $day;
     return $base . '&jump=' . $anchor;
@@ -169,7 +177,7 @@ function som_pill($value, $href, $somLabels, $icon) {
   <?php include __DIR__ . '/partials_nav.php'; ?>
 
   <h3 class="section-label">Last 7 days</h3>
-  <p class="hint" style="margin-top:-10px;"><a href="weight_trend.php">View weight trend (last 2 months) →</a> · <a href="status.php">System status (HA/Node-RED) →</a></p>
+  <p class="hint" style="margin-top:-10px;"><a href="weight_trend.php">View weight trend (last 2 months) →</a></p>
   <div class="week-summary">
     <?php foreach ($days as $day):
         $dayIncCount = $incByDay[$day] ?? 0;
@@ -195,6 +203,7 @@ function som_pill($value, $href, $somLabels, $icon) {
         <?= consumption_pill($log ? $log['alcohol_drinks'] : null, daily_href($log, $day, 'section-alcohol'), $icons['alcohol']) ?>
         <?= medication_pill($log, $validMedIds, daily_href($log, $day, 'section-medication'), $icons['medication']) ?>
         <?= weight_pill($log ? $log['weight'] : null, daily_href($log, $day, 'section-weight'), $icons['weight']) ?>
+        <?= sleep_pill($log ? $log['sleep_efficiency'] : null, daily_href($log, $day, 'section-sleep'), $icons['sleep']) ?>
       </div>
       <?php if ($dueTypes): ?>
       <div class="week-pills">

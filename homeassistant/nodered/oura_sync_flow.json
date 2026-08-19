@@ -88,6 +88,21 @@
     "y": 100,
     "wires": [
       [
+        "n_oura_prep_start_point_write"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_prep_start_point_write",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Prepare InfluxDB start-point write",
+    "func": "// FIX (Aug 2026, real bug hit on first live test run): this node was\n// missing entirely. The intervening GoDaddy get_shared_config.php call\n// (two nodes upstream) overwrites msg.url/msg.headers with its own GET\n// request details on the way through, so by the time execution reaches\n// the InfluxDB write those need rebuilding from msg.secrets -- same\n// pattern already used correctly for the batch and finish-point writes\n// further downstream in this flow. msg.influx_start_point itself was\n// already built back in \"Load secrets + start job log\"; this just wraps\n// it into an actual HTTP request.\nmsg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_start_point;\nreturn msg;",
+    "outputs": 1,
+    "x": 675,
+    "y": 80,
+    "wires": [
+      [
         "n_oura_write_start_point"
       ]
     ]
@@ -97,7 +112,7 @@
     "type": "http request",
     "z": "tab_oura_sync",
     "name": "InfluxDB: write start point",
-    "method": "POST",
+    "method": "use",
     "ret": "txt",
     "paytoqs": "ignore",
     "url": "",
@@ -110,14 +125,14 @@
         "n_oura_check_token"
       ]
     ],
-    "comment": "url/headers set dynamically in the preceding function via msg.url/msg.headers \u2014 configure this node's 'URL' field to {{{msg.url}}} if your Node-RED version needs it explicit, and set method to 'use msg.method' if available."
+    "comment": "url/method/headers/payload set dynamically by the preceding 'Prepare InfluxDB start-point write' function via msg.url/msg.method/msg.headers/msg.payload. If this still shows 'No url specified' after redeploying, the fix didn't take -- check that this node's wiring actually comes from n_oura_prep_start_point_write, not directly from n_oura_merge_shared_config."
   },
   {
     "id": "n_oura_check_token",
     "type": "function",
     "z": "tab_oura_sync",
     "name": "Check token expiry",
-    "func": "// Mirrors oura_ensure_valid_token() in oura.php: refresh if expiring\n// within 60 seconds, otherwise reuse the stored token untouched.\nconst secrets = msg.secrets;\nconst expiresAt = new Date(secrets.oura_expires_at || 0).getTime();\nconst needsRefresh = (expiresAt <= Date.now() + 60000);\nmsg.needs_refresh = needsRefresh;\nif (needsRefresh) {\n    msg.url = 'https://api.ouraring.com/oauth/token';\n    msg.method = 'POST';\n    msg.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };\n    const params = new URLSearchParams({\n        grant_type: 'refresh_token',\n        refresh_token: secrets.oura_refresh_token,\n        client_id: secrets.oura_client_id,\n        client_secret: secrets.oura_client_secret\n    });\n    msg.payload = params.toString();\n}\nreturn msg;",
+    "func": "// Mirrors oura_ensure_valid_token() in oura.php: refresh if expiring\n// within 60 seconds, otherwise reuse the stored token untouched.\n//\n// FIX (Aug 2026, real bug hit on first live test run): new Date(x).getTime()\n// returns NaN for anything unparseable (e.g. oura_expires_at still holding\n// its literal .example placeholder text, pre-first-auth) -- and any\n// comparison against NaN is always false in JS. That silently made\n// needsRefresh evaluate to false instead of true, so a placeholder/missing\n// expires_at was treated as \"token still valid\" and the flow limped ahead\n// with whatever stale oura_access_token happened to be in the secrets file,\n// rather than refreshing (or clearly failing) up front. Guard explicitly:\n// unparseable always counts as needing refresh.\nconst secrets = msg.secrets;\nconst expiresAt = new Date(secrets.oura_expires_at || 0).getTime();\nconst needsRefresh = !Number.isFinite(expiresAt) || (expiresAt <= Date.now() + 60000);\nmsg.needs_refresh = needsRefresh;\nif (needsRefresh) {\n    msg.url = 'https://api.ouraring.com/oauth/token';\n    msg.method = 'POST';\n    msg.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };\n    const params = new URLSearchParams({\n        grant_type: 'refresh_token',\n        refresh_token: secrets.oura_refresh_token,\n        client_id: secrets.oura_client_id,\n        client_secret: secrets.oura_client_secret\n    });\n    msg.payload = params.toString();\n}\nreturn msg;",
     "outputs": 1,
     "x": 400,
     "y": 160,
@@ -425,7 +440,7 @@
     "type": "function",
     "z": "tab_oura_sync",
     "name": "Split entities for HA WebSocket node",
-    "func": "// Fan out msg.ha_entities into proper Home Assistant SERVICE calls, not\n// raw entity_id/value pairs. Setting a helper entity's value is a service\n// call, not a direct state write:\n//   input_boolean -> turn_on / turn_off, no extra data\n//   input_text    -> set_value, data: { value }\n//   input_datetime -> set_datetime, data: { datetime }\n// The old \"ha-entity\" node this used to feed is deprecated (Node-RED will\n// say so explicitly) \u2014 this now feeds an api-call-service node instead,\n// configured to read domain/service/target/data dynamically from msg.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { domain: call.domain, service: call.service, target: call.target, payload: call.data };\n}).filter(Boolean);",
+    "func": "// Fan out msg.ha_entities into proper Home Assistant SERVICE calls, not\n// raw entity_id/value pairs. Setting a helper entity's value is a service\n// call, not a direct state write:\n//   input_boolean -> turn_on / turn_off, no extra data\n//   input_text    -> set_value, data: { value }\n//   input_datetime -> set_datetime, data: { datetime }\n// The old \"ha-entity\" node this used to feed is deprecated (Node-RED will\n// say so explicitly) \u2014 this now feeds an api-call-service (\"action\")\n// node instead.\n//\n// FIX (Aug 2026, real bug hit on first live test run): this originally\n// returned { domain, service, target, payload } as separate top-level msg\n// properties, matching the OLDER api-call-service node schema (domainType:\n// 'msg.domain' etc. \u2014 see this repo's git history). Ward's installed\n// version is the newer \"action\" node redesign (HA's own services->actions\n// rename), which does not read those properties at all \u2014 its UI showed\n// Action/Targets/Data as genuinely empty, not just unset. Current schema\n// (confirmed via the node's own docs, zachowj.github.io/node-red-contrib-\n// home-assistant-websocket/node/action.html): everything must be under\n// msg.payload as { action: 'domain.service', target: {...}, data: {...} }\n// \u2014 payload.action/target/data override the node's UI config even if the\n// UI is left blank. If a future node-version upgrade changes this schema\n// again, re-check that doc page rather than assuming this still holds.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
     "outputs": 1,
     "x": 400,
     "y": 520,
@@ -458,7 +473,7 @@
     "serviceType": "msg.service",
     "targetType": "msg.target",
     "dataFieldType": "msg.payload",
-    "comment": "Deprecated 'ha-entity' node replaced with the core api-call-service node, driven dynamically from msg.domain/msg.service/msg.target/msg.payload (set by the preceding function node). REQUIRED after import: open this node, set the 'Server' field to your HA connection, and confirm the domain/service/target/data field TYPES actually say 'msg.' rather than a fixed value \u2014 the exact property names for this (e.g. domainType/serviceType) have changed across versions of node-red-contrib-home-assistant-websocket, so this config may need re-selecting in the editor's dropdowns rather than trusting the imported JSON blindly.",
+    "comment": "Deprecated 'ha-entity' node replaced with the core api-call-service (\"action\") node. FIX (Aug 2026): this node's stale domain/service/target/data/domainType/serviceType/targetType/dataFieldType properties are leftover from an OLDER version of this node's schema and don't do anything on Ward's installed version \u2014 confirmed via his own screenshot of the editor (Action/Targets/Data all showed genuinely empty, not just unset). The preceding function node now sends everything as a single msg.payload = { action, target, data } object instead, which the newer node reads directly and which overrides its UI config regardless of what's left in these stale properties (per the node's own docs) \u2014 so it's fine to leave Action/Targets/Data blank in the editor. The one thing that still MUST be set manually per install, and can't be pre-filled from JSON: the 'Server' field \u2014 open this node and select your HA connection.",
     "x": 200,
     "y": 580,
     "wires": [

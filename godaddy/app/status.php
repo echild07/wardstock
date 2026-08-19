@@ -10,7 +10,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$active = '';
+$active = 'status';
 
 $rows = $pdo->query('SELECT * FROM system_status_reports ORDER BY category, component')->fetchAll();
 
@@ -71,6 +71,7 @@ function fmt_component($c) {
   <?php include __DIR__ . '/partials_nav.php'; ?>
 
   <p class="hint">HA / Node-RED / Analytics, reported here every ~15 minutes by the Home Assistant piece's Status Heartbeat flow (PLAN.md §15). This page only reads what was last reported — it doesn't reach out to HA itself.</p>
+  <p class="hint">Related: <a href="debug.php">Debug / Version →</a> · <a href="oura_test.php">Oura Connection Test →</a></p>
 
   <?php foreach ([
       'ha' => 'Home Assistant',

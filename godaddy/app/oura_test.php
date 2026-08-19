@@ -5,7 +5,7 @@ require_once __DIR__ . '/oura.php';
 require_login();
 
 $pdo = get_db();
-$active = 'daily';
+$active = 'status';
 
 function mask($value, $showStart = 4, $showEnd = 4) {
     if ($value === null || $value === '') return '(empty)';
@@ -168,7 +168,7 @@ $haSyncHistory = $pdo->query('SELECT * FROM ha_sync_log ORDER BY called_at DESC 
 <div class="wrap">
   <header class="topbar">
     <h1>Oura Connection Test</h1>
-    <a class="btn-link" href="oura_sync.php">← Back</a>
+    <a class="btn-link" href="status.php">← Back to Status</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
 

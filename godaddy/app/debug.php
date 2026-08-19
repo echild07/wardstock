@@ -5,7 +5,7 @@ require_once __DIR__ . '/app_version.php';
 require_login();
 
 $pdo = get_db();
-$active = 'export';
+$active = 'status';
 
 $dbVersion = get_setting($pdo, 'db_version');
 $inSync = ($dbVersion === APP_VERSION_SCHEMA);
@@ -26,7 +26,7 @@ $inSync = ($dbVersion === APP_VERSION_SCHEMA);
 <div class="wrap">
   <header class="topbar">
     <h1>Debug / Version</h1>
-    <a class="btn-link" href="export.php">← Back to Export</a>
+    <a class="btn-link" href="status.php">← Back to Status</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
 

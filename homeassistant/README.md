@@ -78,6 +78,15 @@ In Node-RED: Menu → Import → paste the contents of
 `nodered/body_comp_import_flow.json`, `nodered/status_heartbeat_flow.json`,
 and `nodered/system_test_flow.json` (five separate imports).
 
+**Optional sixth flow, not part of the required setup sequence:**
+`nodered/oura_backfill_flow.json` — a manual, on-demand tool to backfill
+full historical Oura data straight into InfluxDB (past the curated
+subset a manual GoDaddy pull gives you), for whatever range you set on
+its inject node before clicking. See the flow's own tab `info` in the
+Node-RED editor for full usage details, or `PLAN.md` §17. Import it the
+same way, whenever you actually want to run a backfill — no harm in
+leaving it out until then.
+
 Also create the two folders the Body Composition Import flow expects
 (via Studio Code Server, Samba, or SSH — same access you used for step
 4): `/share/lucius_body_comp_import/` (drop your scale app's `.xlsx`
