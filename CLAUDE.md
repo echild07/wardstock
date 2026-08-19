@@ -4,7 +4,7 @@ Read this first. It points to the detailed docs rather than repeating them — c
 
 ## What this is
 
-A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.3 "Lucius"**.
+A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.4 "Lucius"**.
 
 ## Where the detail actually lives — read before making changes
 
@@ -21,7 +21,7 @@ Everything from the previous handoff (PROMPT.md, .gitignore/credential exposure,
 
 1. **None of the five Node-RED flows have been run against Ward's real HA instance.** Every flow (Oura Sync, GoDaddy Pull, Body Composition Import, Status Heartbeat, System Test) is built and reviewed but unexecuted — see each flow's own tab `info` and `homeassistant/README.md`'s "What's verified vs. not" for specifics on what's most likely to need real fixing.
 2. **DB password rotation in GoDaddy cPanel — Ward's own action, not something doable remotely.** The repo was briefly public with real credentials committed; they've since been rotated (APP_SECRET, API_SYNC_TOKEN) and scrubbed from git history, but the actual DB password itself still needs changing in cPanel.
-3. **Favicon legibility.** The new `wardstock.png` logo (replaced project-wide) resamples to a barely-legible blob at 32×32 — would need a dedicated simplified mark, not just a smaller crop, if that's worth doing.
+3. **Favicon legibility.** Icons now use Ward's own higher-fidelity, purpose-sized versions (no resampling on our end) — crisper than the first pass, but the 32×32 favicon is still hard to read at a glance since the design itself is detailed. A dedicated simplified mark would need new artwork, if that's ever worth doing.
 4. **Marketing PDF** — generated on demand only, not committed (gitignored). Regenerate via headless Edge/Chrome (`marketing/README.md` has the exact command) when actually needed.
 
 ## Conventions worth knowing before touching anything

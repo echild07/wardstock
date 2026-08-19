@@ -6,7 +6,7 @@ got here, and `godaddy/PROJECT_PLAN.md` / `homeassistant/PLAN.md` for the
 decision log behind any specific design choice. This file states what
 exists now, not why.
 
-**Current version: 2.2.3 "Lucius"**
+**Current version: 2.2.4 "Lucius"**
 
 ---
 
