@@ -6,7 +6,7 @@ got here, and `godaddy/PROJECT_PLAN.md` / `homeassistant/PLAN.md` for the
 decision log behind any specific design choice. This file states what
 exists now, not why.
 
-**Current version: 2.2.5 "Lucius"**
+**Current version: 2.2.6 "Lucius"**
 
 ---
 
@@ -64,8 +64,10 @@ Deployed to `public_html/Wardstock/` (case-sensitive hosting — folder is
 | `oura_connect.php` / `oura_callback.php` / `oura_sync.php` | Oura OAuth2 flow + manual pull |
 | `oura_test.php` | Oura + HA-sync diagnostics |
 | `status.php` | HA/Node-RED/Analytics status view (reads `system_status_reports`) |
-| `about.php` | App purpose, version, architecture overview |
+| `about.php` | App purpose, version, architecture overview, LeeWard/founders. Public, no login. |
+| `marketing.html` | LeeWard/WardStock flyer — plain static HTML (moved from a separate `marketing/` folder so it ships with the app), fully self-contained (fonts via CDN, logo embedded as base64). Public, no login. |
 | `privacy.php` / `terms.php` | Public, no-login pages (Oura registration requirement) |
+| `leeward-badge.png` | Round LeeWard emblem, cropped from `marketing/leeward_logo_transparent.png` — used on `about.php` for the company and both founder placeholder photos |
 | `style.css` | All styling — dark theme, CSS custom properties (`--bg`, `--text`, `--muted`, `--accent`, `--danger`, `--mild`, `--moderate`, `--severe`, `--border`, etc.) |
 | `manifest.json` + icon PNGs | PWA home-screen install |
 | `api/oura_push.php` | Token-auth. HA POSTs Oura summary fields per date. |

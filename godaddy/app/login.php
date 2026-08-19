@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <label>Password <input type="password" name="password" required></label>
     <button type="submit">Log in</button>
   </form>
-  <p class="hint" style="margin-top:24px;"><a href="privacy.php">Privacy Policy</a> · <a href="terms.php">Terms of Service</a></p>
+  <p class="hint" style="margin-top:24px;"><a href="privacy.php">Privacy Policy</a> · <a href="terms.php">Terms of Service</a> · <a href="about.php">About</a> · <a href="marketing.html">LeeWard / WardStock flyer</a></p>
 </div>
 </body>
 </html>

@@ -1,11 +1,14 @@
 <?php
+// Intentionally NOT behind require_login() — linked from login.php's
+// footer (alongside Privacy/Terms), so it needs to work before signing
+// in. Nothing sensitive here: app description, version numbers, and
+// public-facing company/founder info.
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/app_version.php';
-require_login();
 
 $pdo = get_db();
-$active = '';
+$isLoggedIn = is_logged_in();
 $dbVersion = get_setting($pdo, 'db_version');
 ?>
 <!doctype html>
@@ -27,9 +30,11 @@ $dbVersion = get_setting($pdo, 'db_version');
       <img src="icon-192.png" alt="" width="36" height="36" class="brand-mark">
       <h1>About WardStock</h1>
     </div>
-    <a class="btn-link" href="index.php">← Back to dashboard</a>
+    <a class="btn-link" href="<?= $isLoggedIn ? 'index.php' : 'login.php' ?>">← Back to <?= $isLoggedIn ? 'dashboard' : 'login' ?></a>
   </header>
-  <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php if ($isLoggedIn): ?>
+    <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php endif; ?>
 
   <fieldset>
     <legend>What this is</legend>
@@ -56,6 +61,43 @@ $dbVersion = get_setting($pdo, 'db_version');
   <fieldset>
     <legend>Personal use only</legend>
     <p>One vessel, one crew, one log — this is a single-user application with one shared login, built for and used by one person. See <a href="privacy.php">Privacy Policy</a> and <a href="terms.php">Terms</a> for the specifics.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>LeeWard</legend>
+    <div class="founders">
+      <div class="founder-card">
+        <img src="leeward-badge.png" alt="LeeWard" class="founder-photo">
+        <h4>LeeWard</h4>
+        <p class="hint">The company behind WardStock and the Lucius project. <em>Leeward, n. — the side sheltered from the wind; where a ship finds its steadiest water.</em></p>
+        <p class="hint"><a href="marketing.html">See the LeeWard / WardStock flyer →</a></p>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Founders</legend>
+    <div class="founders">
+      <div class="founder-card">
+        <img src="leeward-badge.png" alt="Ward Bowman" class="founder-photo">
+        <h4>Ward Bowman</h4>
+      </div>
+      <div class="founder-card">
+        <img src="leeward-badge.png" alt="Lisa Bowman" class="founder-photo">
+        <h4>Lisa Bowman</h4>
+      </div>
+    </div>
+
+    <div class="founder-bio">
+      <h5>Ward Bowman</h5>
+      <p>Ward Bowman has spent over 30 years building the systems that let people see clearly into complicated things — SCADA systems, Historians, MES platforms, and some of the earliest IIoT solutions, deployed across industries from Consumer Packaged Goods to Life Sciences to Oil and Gas. He currently leads go-to-market strategy for software solutions at <strong>Rockwell Automation</strong>, following five and a half years as Senior Director of Product Management at <strong>PTC</strong> and seventeen years at <strong>GE</strong>, where he built and led a wireless monitoring and hosting business years ahead of "IIoT" becoming an industry term, architected Big Data and mobility platforms, and was named <strong>GE Fanuc Engineer of the Year in 2009</strong>. Colleagues across different eras and working relationships have consistently described him the same way: someone who clears distractions and bureaucracy out of his team's way, hands out real ownership rather than micromanaging, and holds the commercial and technical sides of a problem at once — seeing not just the answer for now, but what the next few problems down the road will require.</p>
+      <p>He served <strong>15 years in the U.S. Army and Massachusetts Army National Guard</strong>, in Air Defense Artillery and Combat Engineering, and holds a <strong>B.S. in Computer Engineering from the University of Massachusetts Dartmouth</strong>. WardStock — and the wider LeeWard project it lives under — grew out of the same throughline as the rest of his work: build the thing that tells you the truth about what's actually happening, keep it simple enough to trust in the moment it matters, and never mistake a dashboard for the real work underneath it.</p>
+    </div>
+
+    <div class="founder-bio">
+      <h5>Lisa Bowman</h5>
+      <p class="hint">Bio coming soon.</p>
+    </div>
   </fieldset>
 
   <fieldset>

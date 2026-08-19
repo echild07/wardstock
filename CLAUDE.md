@@ -4,7 +4,7 @@ Read this first. It points to the detailed docs rather than repeating them — c
 
 ## What this is
 
-A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.5 "Lucius"**.
+A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.6 "Lucius"**.
 
 ## Where the detail actually lives — read before making changes
 
