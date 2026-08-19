@@ -1,5 +1,7 @@
 # WardStock ↔ Home Assistant Sync Architecture
 
+*This engine is named **wherewhen** — see `README.md`'s naming note. "Lucius" refers to the whole two-piece project, not this engine specifically.*
+
 **Status:** Exploratory / not started — planning document, separate from `PROJECT_PLAN.md` which tracks the live GoDaddy app.
 
 ---

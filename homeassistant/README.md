@@ -1,4 +1,6 @@
-# Lucius — Home Assistant piece
+# wherewhen — the Home Assistant piece of Lucius
+
+*wherewhen is this engine's own name — "Lucius" is the umbrella project covering both this and the GoDaddy piece (WardStock), not a name for this engine specifically.*
 
 Five Node-RED flows: an Oura sync (every 4 hours, anchored 10am), a
 GoDaddy manual-data pull (every 15 min), a Body Composition Import
