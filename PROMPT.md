@@ -6,7 +6,7 @@ got here, and `godaddy/PROJECT_PLAN.md` / `homeassistant/PLAN.md` for the
 decision log behind any specific design choice. This file states what
 exists now, not why.
 
-**Current version: 2.2.2 "Lucius"**
+**Current version: 2.2.3 "Lucius"**
 
 ---
 
@@ -111,6 +111,7 @@ Two independent mechanisms in `auth.php`:
 |---|---|
 | `README.md` | Setup steps |
 | `PLAN.md` | Full design doc, all 16 sections |
+| `INFLUXDB_V2_SETUP.md` | Confirmed-working InfluxDB v2 add-on setup — catalog repo, org/bucket wizard, scoped API token, add-on config YAML |
 | `lucius_secrets.json.example` | Template for `/share/lucius_secrets.json` on the HA box |
 | `ha_config/helpers.yaml` | HA helper entities (`input_datetime`/`input_boolean`/`input_text`) the flows read/write |
 | `ha_config/dashboard.yaml` | Lovelace card for the same entities |

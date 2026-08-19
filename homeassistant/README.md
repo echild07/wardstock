@@ -12,16 +12,18 @@ at the bottom before trusting this in production.**
 
 ### 1. Add-ons
 Install via HAOS's Add-on Store:
-- **InfluxDB** (Home Assistant Community Add-ons)
+- **InfluxDB v2** — **not** the default "InfluxDB" Community Add-on (that one is 1.8.x, a different data model entirely — no orgs/buckets/API tokens). This project uses **Jay's Home Assistant Add-ons: InfluxDB2**, added via its own catalog repository. Full steps confirmed working (not guessed): see `INFLUXDB_V2_SETUP.md` in this folder.
 - **Node-RED** (official add-on) — after install, add the
   `node-red-contrib-home-assistant-websocket` palette (Node-RED's
   Manage Palette screen) so flows can update HA entities.
 
 ### 2. InfluxDB
-Create a bucket (e.g. `lucius`) and an API token with write access to it
-(InfluxDB UI → Data → API Tokens). Note the bucket name, org name, token,
-and the add-on's internal URL (InfluxDB add-on's Info tab) — you'll need
-all four in step 4.
+Full walkthrough (add-on repository, first-run org/bucket wizard,
+scoped API token generation, confirming the real reachable hostname,
+the add-on's own `ssl: false` config) is in **`INFLUXDB_V2_SETUP.md`** —
+follow it start to finish before continuing to step 3. End state: a
+bucket name, org name, API token, and confirmed URL/hostname — you'll
+need all four in step 4.
 
 ### 3. Deploy the GoDaddy side (if not already deployed)
 Everything in `../godaddy/` needs to be live first — the new

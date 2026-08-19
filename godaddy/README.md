@@ -4,7 +4,7 @@
 
 "Taking stock of Ward." A private, single-user, password-protected health tracker: **Incidents** (anxiety & cardiac episodes), **Daily Log** (sleep/exercise/caffeine/alcohol/medication), **Medications** (start/end dates, dosage history), **Therapy** (sessions + recurring schedule + since-last-session report), a 7-day dashboard, and a JSON **Export**.
 
-**Current version: 2.2.2 "Lucius"**
+**Current version: 2.2.3 "Lucius"**
 
 Single-user by design — one shared login (`app_user`), no per-person data separation. See "Is this multi-user?" at the bottom if you ever need to change that.
 
