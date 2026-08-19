@@ -6,7 +6,7 @@ got here, and `godaddy/PROJECT_PLAN.md` / `homeassistant/PLAN.md` for the
 decision log behind any specific design choice. This file states what
 exists now, not why.
 
-**Current version: 2.2.1 "Lucius"**
+**Current version: 2.2.2 "Lucius"**
 
 ---
 
@@ -37,7 +37,7 @@ Deployed to `public_html/Wardstock/` (case-sensitive hosting — folder is
 | `app/` | Every file below except `config.php` — flattened directly into `public_html/Wardstock/` |
 | `config/config.php` | Real DB/Oura/API credentials — its own subfolder, never flattened, never blindly re-uploaded |
 | `config/.htaccess` | `Require all denied` on the config folder |
-| `sql/` | `schema.sql` + `reset_clean.sql` (fresh install), `alter_*.sql` (additive migrations), `set_version.sql` (only present in a release that changed `sql/`) |
+| `sql/` | `schema.sql` + `reset_clean.sql` (fresh install), `upgrade_from_<major>.0.0.sql` — one cumulative, idempotent, safe-to-re-run script per major version line (see Versioning below) |
 | `setup-delete-after-use/setup.php`, `reset_password.php` | Unauthenticated action pages — upload only when needed, delete from the server immediately after |
 
 **`app/` files:**
@@ -95,7 +95,7 @@ Scheme: `Major.SQL.Code`, plus a fixed codename per major version ("Lucius" for 
 - **SQL** — bump only when a release changes `sql/`. Resets Code to 0. **Only Major.SQL is stored in the database** (`app_settings.db_version`).
 - **Code** — bump for every release that doesn't touch `sql/`.
 - `debug.php` compares `APP_VERSION_SCHEMA` (Major.SQL) against the DB's `db_version` — a code-only release is expected to show a different full version than the DB, and that's correct.
-- `sql/set_version.sql` ships only in a release that changed `sql/`.
+- Database upgrades: `sql/upgrade_from_<major>.0.0.sql` — one cumulative, idempotent file per major version line (currently `upgrade_from_1.0.0.sql` and `upgrade_from_2.0.0.sql`), appended to as new releases within that line change `sql/`, safe to run from any point in that line including an already-current database. Crossing a major-version boundary means running the previous major's file first, then the current one — at most two files for any upgrade.
 
 ## GoDaddy piece — auth
 

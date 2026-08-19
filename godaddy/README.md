@@ -4,7 +4,7 @@
 
 "Taking stock of Ward." A private, single-user, password-protected health tracker: **Incidents** (anxiety & cardiac episodes), **Daily Log** (sleep/exercise/caffeine/alcohol/medication), **Medications** (start/end dates, dosage history), **Therapy** (sessions + recurring schedule + since-last-session report), a 7-day dashboard, and a JSON **Export**.
 
-**Current version: 2.2.1 "Lucius"**
+**Current version: 2.2.2 "Lucius"**
 
 Single-user by design — one shared login (`app_user`), no per-person data separation. See "Is this multi-user?" at the bottom if you ever need to change that.
 
@@ -16,7 +16,9 @@ Every release has a version number, `Major.SQL.Code` (e.g. `2.0.0`), plus a fixe
 - **SQL** — bumped only when a release actually changes something in `sql/` (a new `alter_*.sql`, or a `schema.sql` change). Resets Code to 0.
 - **Code** — bumped for every release that does *not* touch `sql/`. A SQL-changing release bumps SQL instead of this.
 
-**Only the Major.SQL part is tracked in the database** — the `app_settings` table's `db_version` key stores just `"2.0"`, never the full three-part version, since a code-only release has nothing for the database to catch up on. That's the whole point of splitting it this way: **you only need to run `sql/set_version.sql` in a release that actually includes one** — a code-only release changes the app's displayed version number but requires no database action at all.
+**Only the Major.SQL part is tracked in the database** — the `app_settings` table's `db_version` key stores just `"2.0"`, never the full three-part version, since a code-only release has nothing for the database to catch up on. A code-only release changes the app's displayed version number but requires no database action at all.
+
+**Database upgrades are one file per major version line, not one file per release.** `sql/upgrade_from_<major>.0.0.sql` (e.g. `upgrade_from_2.0.0.sql`) is a living, cumulative script covering every SQL change made anywhere in that major version's line — safe to run regardless of which specific release your database is actually on, including a release that's already fully current (every step checks whether it's already applied before doing anything, so re-running is always a safe no-op for whatever's already there). See "Upgrading an existing install" below.
 
 `debug.php` (linked at the bottom of the Export page) shows the full app version, the Major.SQL "schema revision" that's actually compared, and the database's recorded schema revision — flagging a mismatch only when Major.SQL disagrees. The Code number is expected to differ from whatever's in the database at any given moment; that's normal, not a mismatch.
 
@@ -26,7 +28,7 @@ This folder (`godaddy/`) is one of two pieces in the overall **Lucius** project 
 
 - **`app/`** — every file that actually runs the site *except* `config.php`. Upload the *contents* of this folder directly into `public_html/Wardstock/` (not the `app` folder itself — its files belong flat in your site folder, same level as everything else). **Safe to blindly re-upload every file in here on every update** — it never contains your real credentials.
 - **`config/`** — just `config.php` (your real DB/Oura credentials) and a `.htaccess` blocking direct web access to it. Upload this **once**, as its own subfolder — `public_html/Wardstock/config/` (keep the folder, don't flatten it like `app/`). **Never re-upload this folder as part of a routine update** — that's the entire point of splitting it out: a blanket "upload everything" can't accidentally overwrite your real settings with the blank template, since it lives somewhere that kind of update never touches.
-- **`sql/`** — every `.sql` file. Never uploaded via FTP — paste these into phpMyAdmin's SQL tab instead. `schema.sql`/`reset_clean.sql` are for a fresh install; everything named `alter_*.sql` is an additive migration for an existing install with real data (see "Upgrading" below for order). `set_version.sql` only appears in a release when `sql/` actually changed that release — if it's not in the package, there's nothing new to run in the database at all.
+- **`sql/`** — every `.sql` file. Never uploaded via FTP — paste these into phpMyAdmin's SQL tab instead. `schema.sql`/`reset_clean.sql` are for a fresh install. `upgrade_from_<major>.0.0.sql` is for an existing install with real data — one cumulative, safe-to-re-run file per major version line (see "Upgrading" below), not a growing pile of per-release fragments.
 - **`setup-delete-after-use/`** — `setup.php` and `reset_password.php`. Upload these into `public_html/Wardstock/` alongside `app/`'s contents *only when you're about to use one of them*, then **delete it from the server immediately after** — leaving either reachable is a real security hole, since neither requires knowing the current password to act.
 
 ## Setup (fresh install — no existing data)
@@ -40,7 +42,13 @@ This folder (`godaddy/`) is one of two pieces in the overall **Lucius** project 
 
 ## Upgrading an existing install (you have real data)
 
-Run whichever `sql/alter_*.sql` files are new since your last deployment (in filename order shown in the package notes — each one's header comment says if it depends on another running first), **including `sql/set_version.sql` if it's present in the package — if it's not there, this release didn't touch the database at all and there's nothing to run.** All are additive only, never touching existing incidents/daily logs/medications. Then re-upload the changed files from `app/` — safe to upload the whole folder blindly, since `config.php` isn't in there anymore. **Never re-upload the `config/` folder** as part of a routine update; it's only touched during initial setup or if you're deliberately changing a credential. Check `debug.php` afterward to confirm the app's schema revision (Major.SQL, not the full version) agrees with the database's.
+At most **two** files to run in phpMyAdmin, no matter how many releases you're behind:
+
+- **Already on some 2.x.x release, upgrading to a newer 2.x.x** → run `sql/upgrade_from_2.0.0.sql`. Safe even if you're already fully current (every step checks first, does nothing if already applied).
+- **Still on a 1.x.x release, upgrading to 2.x.x** → run `sql/upgrade_from_1.0.0.sql` first (brings you to the end of the 1.x line), then `sql/upgrade_from_2.0.0.sql`.
+- **A future 3.x.x line** would add its own `sql/upgrade_from_3.0.0.sql`, run after the 2.x.x one, same pattern.
+
+All additive only, never touching existing incidents/daily logs/medications. Then re-upload the changed files from `app/` — safe to upload the whole folder blindly, since `config.php` isn't in there anymore. **Never re-upload the `config/` folder** as part of a routine update; it's only touched during initial setup or if you're deliberately changing a credential. Check `debug.php` afterward to confirm the app's schema revision (Major.SQL, not the full version) agrees with the database's.
 
 **After running the medication-frequency migration specifically**, go to **Medications** and check Wegovy and Repatha: their due-date calculation anchors to `start_date`, and the seed date may not land on your actual dose day. Edit each one and set `start_date` to a real date you took a dose so the weekly/biweekly cycle lines up correctly.
 

@@ -112,8 +112,9 @@ mid-setup.
   `msg.*` property, e.g. `msg.oura_last_success`, not overwrite
   `msg.payload`) — the exact config field name for this has the same
   cross-version-drift risk already documented for `api-call-service`
-  below. Also deploy `../godaddy/sql/alter_add_system_status_reports.sql`
-  and `set_version.sql` first — `api/status_push.php` needs that table.
+  below. Also deploy `../godaddy/sql/upgrade_from_2.0.0.sql` first (safe
+  to run even if you've already applied part of it) — `api/status_push.php`
+  needs the `system_status_reports` table it creates.
 - Body Composition Import specifically: the `exceljs` nodes require the
   `node-red-contrib-officedocs` palette package (Manage Palette) —
   already confirmed installed and working via `nodered/body_comp_xlsx_test.json`,

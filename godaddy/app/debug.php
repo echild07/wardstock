@@ -39,11 +39,11 @@ $inSync = ($dbVersion === APP_VERSION_SCHEMA);
         <td>Status</td>
         <td>
           <?php if ($dbVersion === null): ?>
-            <span class="error">❌ No version recorded in the database yet — run <code>sql/alter_add_version.sql</code> (or the matching <code>set_version.sql</code> for your current release).</span>
+            <span class="error">❌ No version recorded in the database yet — run <code>sql/upgrade_from_1.0.0.sql</code> then <code>sql/upgrade_from_2.0.0.sql</code> (skip the first if you're already on a 2.x.x install).</span>
           <?php elseif ($inSync): ?>
             <span class="notice notice-success">✅ App and database schema are in sync.</span>
           <?php else: ?>
-            <span class="error">❌ Mismatch — app code expects schema <?= htmlspecialchars(APP_VERSION_SCHEMA) ?> but the database says <?= htmlspecialchars($dbVersion) ?>. Usually means a SQL migration was shipped but not run yet (check <code>sql/</code> for a <code>set_version.sql</code> or <code>alter_*.sql</code> you haven't run). The code revision number (last digit of the app version) is expected to differ freely — only Major.SQL needs to match.</span>
+            <span class="error">❌ Mismatch — app code expects schema <?= htmlspecialchars(APP_VERSION_SCHEMA) ?> but the database says <?= htmlspecialchars($dbVersion) ?>. Usually means a SQL migration was shipped but not run yet — run <code>sql/upgrade_from_2.0.0.sql</code> in phpMyAdmin (it's safe to re-run even if partially applied already). The code revision number (last digit of the app version) is expected to differ freely — only Major.SQL needs to match.</span>
           <?php endif; ?>
         </td>
       </tr>
