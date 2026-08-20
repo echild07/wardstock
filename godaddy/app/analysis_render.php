@@ -30,13 +30,20 @@ function av_corr_strength_label($r) {
     return 'very strong';
 }
 
-// Generic single-line SVG trend chart — same coordinate-computation
-// pattern as weight_trend.php/blood_pressure_trend.php, generalized to
-// any {date, value} series rather than hardcoded to weight. $date may be
-// 'YYYY-MM-DD' or a full ISO timestamp — strtotime() handles both, so
-// callers never need to care which shape a given analysis produced.
+// Generic single-series SVG trend chart — bars, not a connected line
+// (Ward, Aug 2026: "bar charts would be better, the line charts don't
+// add anything... at least the lines between them don't" — a line
+// implies continuity/interpolation between days that isn't really there
+// for once-a-day values, especially with real gaps in the data). Same
+// coordinate/min-max-with-padding computation as before (weight_trend.php/
+// blood_pressure_trend.php's pattern), generalized to any {date, value}
+// series. $date may be 'YYYY-MM-DD' or a full ISO timestamp —
+// strtotime() handles both, so callers never need to care which shape a
+// given analysis produced.
 function av_trend_svg($series, $decimals = 1) {
-    if (count($series) < 2) return null;
+    // Bars (unlike the line this used to be) are meaningful with even a
+    // single point, so the floor here is 1, not 2.
+    if (count($series) < 1) return null;
     $values = array_map(fn($p) => (float)$p['value'], $series);
     $minV = min($values); $maxV = max($values);
     $pad = max(0.5, ($maxV - $minV) * 0.15);
@@ -51,41 +58,65 @@ function av_trend_svg($series, $decimals = 1) {
     $padL = 50; $padR = 16; $padT = 16; $padB = 30;
     $plotW = $chartW - $padL - $padR;
     $plotH = $chartH - $padT - $padB;
+    $baseY = $chartH - $padB;
+    $barW = count($series) > 1 ? max(3, min(16, $plotW / count($series) * 0.6)) : 16;
 
-    $coords = [];
+    $bars = [];
     foreach ($series as $p) {
         $t = strtotime($p['date']);
-        $x = $padL + $plotW * (($t - $firstT) / $span);
-        $y = $padT + $plotH * (1 - (((float)$p['value']) - $minV) / ($maxV - $minV));
-        $coords[] = [round($x, 1), round($y, 1), $p];
+        $x = round($padL + $plotW * (($t - $firstT) / $span), 1);
+        $y = round($padT + $plotH * (1 - (((float)$p['value']) - $minV) / ($maxV - $minV)), 1);
+        $bars[] = [$x, $y, $p];
     }
-    $poly = implode(' ', array_map(fn($c) => $c[0] . ',' . $c[1], $coords));
 
     ob_start();
     ?>
     <svg viewBox="0 0 <?= $chartW ?> <?= $chartH ?>" class="trend-chart" xmlns="http://www.w3.org/2000/svg">
-      <line x1="<?= $padL ?>" y1="<?= $padT ?>" x2="<?= $padL ?>" y2="<?= $chartH - $padB ?>" class="chart-axis" />
-      <line x1="<?= $padL ?>" y1="<?= $chartH - $padB ?>" x2="<?= $chartW - $padR ?>" y2="<?= $chartH - $padB ?>" class="chart-axis" />
+      <line x1="<?= $padL ?>" y1="<?= $padT ?>" x2="<?= $padL ?>" y2="<?= $baseY ?>" class="chart-axis" />
+      <line x1="<?= $padL ?>" y1="<?= $baseY ?>" x2="<?= $chartW - $padR ?>" y2="<?= $baseY ?>" class="chart-axis" />
       <text x="<?= $padL - 6 ?>" y="<?= $padT + 4 ?>" class="chart-label" text-anchor="end"><?= fmt_num($maxV, $decimals) ?></text>
-      <text x="<?= $padL - 6 ?>" y="<?= $chartH - $padB + 4 ?>" class="chart-label" text-anchor="end"><?= fmt_num($minV, $decimals) ?></text>
-      <text x="<?= $padL ?>" y="<?= $chartH - $padB + 18 ?>" class="chart-label"><?= htmlspecialchars(date('M j', $firstT)) ?></text>
-      <text x="<?= $chartW - $padR ?>" y="<?= $chartH - $padB + 18 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars(date('M j', $lastT)) ?></text>
-      <polyline points="<?= $poly ?>" class="chart-line" />
-      <?php foreach ($coords as $c): ?>
-        <circle cx="<?= $c[0] ?>" cy="<?= $c[1] ?>" r="3" class="chart-point">
+      <text x="<?= $padL - 6 ?>" y="<?= $baseY + 4 ?>" class="chart-label" text-anchor="end"><?= fmt_num($minV, $decimals) ?></text>
+      <text x="<?= $padL ?>" y="<?= $baseY + 18 ?>" class="chart-label"><?= htmlspecialchars(date('M j', $firstT)) ?></text>
+      <text x="<?= $chartW - $padR ?>" y="<?= $baseY + 18 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars(date('M j', $lastT)) ?></text>
+      <?php foreach ($bars as $c): ?>
+        <rect x="<?= round($c[0] - $barW / 2, 1) ?>" y="<?= $c[1] ?>" width="<?= round($barW, 1) ?>" height="<?= max(1, round($baseY - $c[1], 1)) ?>" class="av-range-bar">
           <title><?= htmlspecialchars(date('M j, Y', strtotime($c[2]['date']))) ?>: <?= fmt_num($c[2]['value'], $decimals) ?></title>
-        </circle>
+        </rect>
       <?php endforeach; ?>
     </svg>
     <?php
     return ob_get_clean();
 }
 
-// Dual-line variant (bedtime/wake-time trend) — same shape as
-// blood_pressure_trend.php's systolic/diastolic chart, generalized.
-// $series items carry both values directly: {date, a, b}.
-function av_dual_svg($series, $keyA, $keyB, $decimals = 1) {
-    if (count($series) < 2) return null;
+// Converts an hours-since-noon offset (the Flux engine's storage shape
+// for bedtime/wake, chosen specifically to avoid the midnight-wraparound
+// a raw 0-24 clock hour would hit — see analysis_engine_flow.json's own
+// comment on this) back into a real clock-time label for display.
+function fmt_clock_from_noon_offset($h) {
+    if ($h === null) return '—';
+    $actualHour = fmod($h + 12, 24);
+    if ($actualHour < 0) $actualHour += 24;
+    $hh = (int)floor($actualHour);
+    $mm = (int)round(($actualHour - $hh) * 60);
+    if ($mm == 60) { $hh = ($hh + 1) % 24; $mm = 0; }
+    $period = $hh < 12 ? 'AM' : 'PM';
+    $hh12 = $hh % 12; if ($hh12 == 0) $hh12 = 12;
+    return sprintf('%d:%02d %s', $hh12, $mm, $period);
+}
+
+// Range/floating-bar chart — one vertical bar per day, spanning from
+// $keyA's value to $keyB's value, rather than two separate polylines.
+// Built specifically for bedtime/wake-time trend (Ward, Aug 2026 —
+// "the two line graphs don't look good... a better chart to show the
+// start and end time as if they were connected together"): each night's
+// bedtime and wake time are one connected span, not two independent
+// trends that happen to share an x-axis. Y-axis values are still plain
+// numbers internally (hours-since-noon for this analysis) but labeled
+// with $labelFn if given, so the axis reads as real clock times instead
+// of a raw offset number.
+function av_range_bar_svg($series, $keyA, $keyB, $labelFn = null) {
+    if (count($series) < 1) return null;
+    $fmt = $labelFn ?: fn($v) => fmt_num($v, 1);
     $allValues = array_merge(array_map(fn($p) => (float)$p[$keyA], $series), array_map(fn($p) => (float)$p[$keyB], $series));
     $minV = min($allValues); $maxV = max($allValues);
     $pad = max(0.5, ($maxV - $minV) * 0.15);
@@ -96,37 +127,43 @@ function av_dual_svg($series, $keyA, $keyB, $decimals = 1) {
     $lastT = strtotime($series[count($series) - 1]['date']);
     $span = max(1, $lastT - $firstT);
 
-    $chartW = 640; $chartH = 220;
-    $padL = 42; $padR = 16; $padT = 16; $padB = 30;
+    $chartW = 640; $chartH = 240;
+    $padL = 60; $padR = 16; $padT = 16; $padB = 30;
     $plotW = $chartW - $padL - $padR;
     $plotH = $chartH - $padT - $padB;
+    // Bars need real screen width, not a hairline — same idea as a
+    // candlestick chart. Scale down as more days are packed in.
+    $barW = count($series) > 1 ? max(3, min(14, $plotW / count($series) * 0.6)) : 14;
 
-    $coordsA = []; $coordsB = [];
-    foreach ($series as $p) {
-        $t = strtotime($p['date']);
-        $x = round($padL + $plotW * (($t - $firstT) / $span), 1);
-        $coordsA[] = [$x, round($padT + $plotH * (1 - ((float)$p[$keyA] - $minV) / ($maxV - $minV)), 1), $p];
-        $coordsB[] = [$x, round($padT + $plotH * (1 - ((float)$p[$keyB] - $minV) / ($maxV - $minV)), 1), $p];
-    }
-    $polyA = implode(' ', array_map(fn($c) => $c[0] . ',' . $c[1], $coordsA));
-    $polyB = implode(' ', array_map(fn($c) => $c[0] . ',' . $c[1], $coordsB));
+    // A closure, not a named function — a named `function yFor(...)` here
+    // would be declared in PHP's global scope the first time this runs
+    // and fatal-error with "Cannot redeclare" on a second call in the
+    // same request (this function is only called once per page today,
+    // but that's a fragile thing to rely on).
+    $yFor = fn($v) => $padT + $plotH * (1 - ($v - $minV) / ($maxV - $minV));
 
     ob_start();
     ?>
     <svg viewBox="0 0 <?= $chartW ?> <?= $chartH ?>" class="trend-chart" xmlns="http://www.w3.org/2000/svg">
       <line x1="<?= $padL ?>" y1="<?= $padT ?>" x2="<?= $padL ?>" y2="<?= $chartH - $padB ?>" class="chart-axis" />
       <line x1="<?= $padL ?>" y1="<?= $chartH - $padB ?>" x2="<?= $chartW - $padR ?>" y2="<?= $chartH - $padB ?>" class="chart-axis" />
-      <text x="<?= $padL - 6 ?>" y="<?= $padT + 4 ?>" class="chart-label" text-anchor="end"><?= fmt_num($maxV, $decimals) ?></text>
-      <text x="<?= $padL - 6 ?>" y="<?= $chartH - $padB + 4 ?>" class="chart-label" text-anchor="end"><?= fmt_num($minV, $decimals) ?></text>
+      <text x="<?= $padL - 6 ?>" y="<?= $padT + 4 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars($fmt($maxV)) ?></text>
+      <text x="<?= $padL - 6 ?>" y="<?= $chartH - $padB + 4 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars($fmt($minV)) ?></text>
       <text x="<?= $padL ?>" y="<?= $chartH - $padB + 18 ?>" class="chart-label"><?= htmlspecialchars(date('M j', $firstT)) ?></text>
       <text x="<?= $chartW - $padR ?>" y="<?= $chartH - $padB + 18 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars(date('M j', $lastT)) ?></text>
-      <polyline points="<?= $polyA ?>" class="chart-line" />
-      <?php foreach ($coordsA as $c): ?>
-        <circle cx="<?= $c[0] ?>" cy="<?= $c[1] ?>" r="3" class="chart-point"><title><?= htmlspecialchars(date('M j', strtotime($c[2]['date']))) ?>: <?= fmt_num($c[2][$keyA], $decimals) ?></title></circle>
-      <?php endforeach; ?>
-      <polyline points="<?= $polyB ?>" class="chart-line-diastolic" />
-      <?php foreach ($coordsB as $c): ?>
-        <circle cx="<?= $c[0] ?>" cy="<?= $c[1] ?>" r="3" class="chart-point-diastolic"><title><?= htmlspecialchars(date('M j', strtotime($c[2]['date']))) ?>: <?= fmt_num($c[2][$keyB], $decimals) ?></title></circle>
+      <?php foreach ($series as $p):
+          $t = strtotime($p['date']);
+          $x = round($padL + $plotW * (($t - $firstT) / $span), 1);
+          $yA = round($yFor((float)$p[$keyA]), 1);
+          $yB = round($yFor((float)$p[$keyB]), 1);
+          $yTop = min($yA, $yB); $yBottom = max($yA, $yB);
+          $dayLabel = htmlspecialchars(date('M j', $t));
+      ?>
+        <rect x="<?= round($x - $barW / 2, 1) ?>" y="<?= $yTop ?>" width="<?= round($barW, 1) ?>" height="<?= max(1, round($yBottom - $yTop, 1)) ?>" class="av-range-bar">
+          <title><?= $dayLabel ?>: <?= htmlspecialchars($fmt($p[$keyA])) ?> — <?= htmlspecialchars($fmt($p[$keyB])) ?></title>
+        </rect>
+        <circle cx="<?= $x ?>" cy="<?= $yA ?>" r="3" class="chart-point"><title><?= $dayLabel ?> — <?= htmlspecialchars($fmt($p[$keyA])) ?></title></circle>
+        <circle cx="<?= $x ?>" cy="<?= $yB ?>" r="3" class="chart-point-diastolic"><title><?= $dayLabel ?> — <?= htmlspecialchars($fmt($p[$keyB])) ?></title></circle>
       <?php endforeach; ?>
     </svg>
     <?php
@@ -140,10 +177,11 @@ function av_trend_block($trend, $unit = '', $decimals = 1) {
     if (!$trend || empty($trend['series'])) {
         return '<p class="hint">No data in this result yet.</p>';
     }
+    // av_trend_svg() only returns null on a truly empty series, already
+    // ruled out above — bars, unlike the line chart this used to be, are
+    // meaningful even for a single point, so there's no smaller-but-
+    // nonzero case left to handle here.
     $svg = av_trend_svg($trend['series'], $decimals);
-    if (!$svg) {
-        return '<p class="hint">Only ' . count($trend['series']) . ' point(s) so far — need at least 2 to chart a trend.</p>';
-    }
     $slope = $trend['trend_slope_per_day'] ?? null;
     $slopeLabel = $slope === null ? 'flat / not enough data' : (($slope > 0.001 ? '↑ rising' : ($slope < -0.001 ? '↓ falling' : '→ flat')) . ' (' . fmt_num($slope, 3) . '/day)');
     $html = '<div class="report-box">' . $svg . '</div>';
@@ -398,11 +436,16 @@ function render_analysis_result($key, $result) {
             return $html;
 
         case 'bedtime_wake_time_trend':
-            $svg = av_dual_svg($result['series'] ?? [], 'bedtime_hour', 'wake_hour', 1);
+            // Range bar, not two lines (Ward, Aug 2026) — each night's
+            // bedtime/wake reads as one connected span. Values are stored
+            // as hours-since-noon (avoids the midnight-wraparound a raw
+            // clock hour hits); fmt_clock_from_noon_offset() converts
+            // back to a real time label for the axis/tooltips/stats.
+            $svg = av_range_bar_svg($result['series'] ?? [], 'bedtime_offset', 'wake_offset', 'fmt_clock_from_noon_offset');
             $html = $svg ? '<div class="report-box">' . $svg . '</div>' : '<p class="hint">Not enough nights in this period yet.</p>';
             $html .= av_stat_row([
-                ['Avg bedtime', fmt_num($result['avg_bedtime_hour'] ?? null, 1) . 'h'],
-                ['Avg wake time', fmt_num($result['avg_wake_hour'] ?? null, 1) . 'h'],
+                ['Avg bedtime', fmt_clock_from_noon_offset($result['avg_bedtime_offset'] ?? null)],
+                ['Avg wake time', fmt_clock_from_noon_offset($result['avg_wake_offset'] ?? null)],
             ]);
             if (!empty($result['note'])) $html .= '<p class="hint">' . htmlspecialchars($result['note']) . '</p>';
             return $html;

@@ -419,6 +419,7 @@ textarea { resize: vertical; }
 .bp-reading-row form { margin: 0; }
 .chart-line-diastolic { fill: none; stroke: var(--moderate); stroke-width: 2.5; }
 .chart-point-diastolic { fill: var(--moderate); }
+.av-range-bar { fill: var(--accent); opacity: 0.55; rx: 2; }
 
 /* ---------- Radio/checkbox rows (export page, medication list) ---------- */
 .radio-row, .checkbox-row {
