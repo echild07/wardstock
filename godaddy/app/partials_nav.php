@@ -1,16 +1,31 @@
 <?php
 // $active should be set by the including page to one of:
-// 'home' | 'incidents' | 'daily' | 'therapy' | 'medications' | 'status' | 'export'
+// 'home' | 'incidents' | 'daily' | 'medications' | 'wherewhen'
+// Status/Export/Therapy moved under 'wherewhen' (Fulgrim, PLAN.md §18) —
+// pages that used to set $active to 'status'/'export'/'therapy' now set
+// $active = 'wherewhen' for THIS (top) nav, plus $subActive for
+// partials_wherewhen_nav.php's own highlighting.
 $active = $active ?? '';
 function nav_class($key, $active) { return $key === $active ? 'nav-link active' : 'nav-link'; }
+
+// Attention icon (Fulgrim, feature list §3.2 — "maybe an icon on the top
+// right that blinks if things are missing"). Every including page has
+// already required db.php and set $pdo, so the same reminder computation
+// index.php uses for its full banner runs here too, just checked for
+// non-emptiness — cheap enough at this app's scale not to bother with a
+// separate lightweight query path.
+require_once __DIR__ . '/attention.php';
+$attentionNeeded = ($pdo instanceof PDO)
+    ? (bool)(get_attention_items($pdo) || get_pending_event_count($pdo))
+    : false;
 ?>
+<a class="attention-icon<?= $attentionNeeded ? ' attention-icon-active' : '' ?>"
+   href="index.php#attention" title="<?= $attentionNeeded ? 'Something needs your attention' : 'Nothing needs attention right now' ?>">🔔</a>
 <nav class="mainnav">
   <a class="<?= nav_class('home', $active) ?>" href="index.php">Home</a>
   <a class="<?= nav_class('incidents', $active) ?>" href="incidents.php">Incidents</a>
   <a class="<?= nav_class('daily', $active) ?>" href="daily.php">Daily Log</a>
-  <a class="<?= nav_class('therapy', $active) ?>" href="therapy.php">Therapy</a>
   <a class="<?= nav_class('medications', $active) ?>" href="medications.php">Medications</a>
-  <a class="<?= nav_class('status', $active) ?>" href="status.php">Status</a>
-  <a class="<?= nav_class('export', $active) ?>" href="export.php">Export</a>
+  <a class="<?= nav_class('wherewhen', $active) ?>" href="wherewhen.php">Where When</a>
   <a class="nav-link logout" href="logout.php">Log out</a>
 </nav>

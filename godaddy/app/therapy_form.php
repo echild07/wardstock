@@ -63,7 +63,8 @@ $prefillType = $_GET['type'] ?? null;
 $dateValue = $session
     ? date('Y-m-d\TH:i', strtotime($session['session_date']))
     : ($prefillDate ? $prefillDate . 'T18:00' : date('Y-m-d\TH:i'));
-$active = 'therapy';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'therapy';
 ?>
 <!doctype html>
 <html>
@@ -84,6 +85,7 @@ $active = 'therapy';
     <a class="btn-link" href="therapy.php">← Back to list</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
   <p class="hint"><a href="therapy_schedules.php">Manage recurring schedule →</a></p>
 
   <?php if ($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?>

@@ -64,18 +64,6 @@ $dbVersion = get_setting($pdo, 'db_version');
   </fieldset>
 
   <fieldset>
-    <legend>LeeWard</legend>
-    <div class="founders">
-      <div class="founder-card">
-        <img src="leeward-badge.png" alt="LeeWard" class="founder-photo">
-        <h4>LeeWard</h4>
-        <p class="hint">The company behind WardStock and the wherewhen engine. <em>Leeward, n. — the side sheltered from the wind; where a ship finds its steadiest water.</em></p>
-        <p class="hint"><a href="marketing.html">See the LeeWard / WardStock flyer →</a></p>
-      </div>
-    </div>
-  </fieldset>
-
-  <fieldset>
     <legend>Founders</legend>
     <div class="founders">
       <div class="founder-card">

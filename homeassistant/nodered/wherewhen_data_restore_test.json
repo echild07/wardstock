@@ -1,0 +1,103 @@
+[
+  {
+    "id": "tab_wdr_test",
+    "type": "tab",
+    "label": "TEST - Flux CSV parser (restore)",
+    "disabled": false,
+    "info": "Companion test flow for wherewhen_data_restore_flow.json (PLAN.md §2's standing rule) — exercises n_wdr_parse_csv_to_lines' CSV-to-line-protocol logic in isolation against a hand-built fixture matching InfluxDB's DOCUMENTED annotated CSV format, since this logic could not be verified against a real InfluxDB response during development (flagged as the riskiest part of the whole flow in its own tab info).\n\nThis test is NOT equivalent to real verification — it confirms the parser does what it's DESIGNED to do against a fixture built from documentation, not that the documentation itself matches every real response shape InfluxDB actually produces (multiple table blocks, unusual tag combinations, etc.). Re-run this after any change to the parser logic; but treat a real backup/restore cycle against a live InfluxDB instance as the actual proof, not this test passing."
+  },
+  {
+    "id": "n_wdrt_trigger",
+    "type": "inject",
+    "z": "tab_wdr_test",
+    "name": "Click to test",
+    "props": [ { "p": "payload" } ],
+    "repeat": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 80,
+    "wires": [ [ "n_wdrt_set_fixture" ] ]
+  },
+  {
+    "id": "n_wdrt_set_fixture",
+    "type": "function",
+    "z": "tab_wdr_test",
+    "name": "Set embedded multi-table CSV fixture",
+    "func": "// Hand-built from InfluxDB's documented annotated-CSV format — TWO\n// table blocks (different tag sets under the same measurement, exactly\n// the case the live parser's header-re-detection has to handle), plus\n// a numeric and a string field to confirm both value-formatting paths.\nmsg.payload = [\n    '#datatype,string,long,dateTime:RFC3339,dateTime:RFC3339,dateTime:RFC3339,double,string,string,string',\n    '#group,false,false,true,true,false,false,true,true,true',\n    '#default,_result,,,,,,,,',\n    ',result,table,_start,_stop,_time,_value,_field,_measurement,type',\n    ',_result,0,2020-01-01T00:00:00Z,2026-08-20T00:00:00Z,2020-01-15T02:30:00Z,72,resting_hr,oura_sleep,long_sleep',\n    ',_result,0,2020-01-01T00:00:00Z,2026-08-20T00:00:00Z,2020-01-16T02:30:00Z,68,resting_hr,oura_sleep,long_sleep',\n    '',\n    '#datatype,string,long,dateTime:RFC3339,dateTime:RFC3339,dateTime:RFC3339,string,string,string,string',\n    '#group,false,false,true,true,false,false,true,true,true',\n    '#default,_result,,,,,,,,',\n    ',result,table,_start,_stop,_time,_value,_field,_measurement,type',\n    ',_result,1,2020-01-01T00:00:00Z,2026-08-20T00:00:00Z,2020-01-15T02:30:00Z,deep,stage,oura_sleep,long_sleep'\n].join('\\n');\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 80,
+    "wires": [ [ "n_wdrt_parse" ] ]
+  },
+  {
+    "id": "n_wdrt_parse",
+    "type": "function",
+    "z": "tab_wdr_test",
+    "name": "Run the SAME parser as the live flow",
+    "func": "// Deliberately a literal copy of n_wdr_parse_csv_to_lines' inner\n// function (wherewhen_data_restore_flow.json) — if that logic ever\n// changes, update BOTH copies, same convention already established for\n// oura_sync_flow.json/oura_backfill_flow.json's shared line-building code.\nfunction esc(s) { return String(s).replace(/([ ,=])/g, '\\\\$1'); }\n\nfunction parseFluxCsvToLines(csvText) {\n    const RESERVED = new Set(['result', 'table', '_start', '_stop', '_time', '_value', '_field', '_measurement']);\n    const rawLines = csvText.split('\\n').map(l => l.replace(/\\r$/, ''));\n    let header = null;\n    const outLines = [];\n    let dataRowCount = 0;\n\n    rawLines.forEach(raw => {\n        if (raw === '') { return; }\n        if (raw.startsWith('#')) return;\n        const cols = raw.split(',');\n        if (cols.includes('_measurement') && (!header || !arraysEqual(cols, header))) {\n            header = cols;\n            return;\n        }\n        if (!header) return;\n        if (cols.length !== header.length) return;\n\n        const row = {};\n        header.forEach((colName, i) => { row[colName] = cols[i]; });\n\n        const measurement = row['_measurement'];\n        const field = row['_field'];\n        const value = row['_value'];\n        const time = row['_time'];\n        if (!measurement || !field || value === undefined || value === '' || !time) return;\n\n        const tsMs = new Date(time).getTime();\n        if (!Number.isFinite(tsMs)) return;\n\n        const tagParts = [];\n        header.forEach(colName => {\n            if (!RESERVED.has(colName) && colName !== '' && row[colName] !== undefined && row[colName] !== '') {\n                tagParts.push(esc(colName) + '=' + esc(row[colName]));\n            }\n        });\n\n        const isNumeric = !isNaN(Number(value));\n        const fieldPart = esc(field) + '=' + (isNumeric ? Number(value) : ('\"' + String(value).replace(/\"/g, '') + '\"'));\n        const tagStr = tagParts.length ? ',' + tagParts.join(',') : '';\n\n        outLines.push(esc(measurement) + tagStr + ' ' + fieldPart + ' ' + (tsMs * 1000000));\n        dataRowCount++;\n    });\n\n    return { lines: outLines, dataRowCount };\n}\nfunction arraysEqual(a, b) { return a.length === b.length && a.every((v, i) => v === b[i]); }\n\nmsg.parsed = parseFluxCsvToLines(msg.payload);\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 80,
+    "wires": [ [ "n_wdrt_check" ] ]
+  },
+  {
+    "id": "n_wdrt_check",
+    "type": "function",
+    "z": "tab_wdr_test",
+    "name": "Check parsed output against known-correct answer",
+    "func": "const problems = [];\nconst lines = msg.parsed.lines;\n\nif (msg.parsed.dataRowCount !== 3) {\n    problems.push('Expected 3 data rows (2 numeric resting_hr + 1 string stage), got ' + msg.parsed.dataRowCount);\n}\nif (lines.length !== 3) {\n    problems.push('Expected 3 output lines, got ' + lines.length);\n}\n\n// Line 1: numeric field, tag from first table block.\nconst l1 = lines[0] || '';\nif (!/^oura_sleep,type=long_sleep resting_hr=72 \\d+$/.test(l1)) {\n    problems.push('Line 1 shape mismatch — expected \"oura_sleep,type=long_sleep resting_hr=72 <ts>\", got: ' + JSON.stringify(l1));\n}\n\n// Line 3: string field (quoted value), tag from SECOND table block — the\n// real test of whether header re-detection across the blank-line/new-\n// annotation-block boundary actually works.\nconst l3 = lines[2] || '';\nif (!/^oura_sleep,type=long_sleep stage=\"deep\" \\d+$/.test(l3)) {\n    problems.push('Line 3 (second table block) shape mismatch — expected \\'oura_sleep,type=long_sleep stage=\"deep\" <ts>\\', got: ' + JSON.stringify(l3) + ' — if this is wrong but line 1 is right, the header re-detection across table blocks is the specific thing broken.');\n}\n\n// Timestamp sanity — Jan 15 2020 02:30 UTC should be in a plausible\n// nanosecond range, not zero/NaN-derived.\nconst ts1 = (l1.match(/ (\\d+)$/) || [])[1];\nif (!ts1 || ts1.length < 15) {\n    problems.push('Line 1 timestamp looks wrong (too short to be a real ns epoch): ' + ts1);\n}\n\nmsg.payload = {\n    result: problems.length ? 'PROBLEMS FOUND' : 'ALL CHECKS PASSED',\n    problems: problems,\n    parsed_lines: lines,\n    data_row_count: msg.parsed.dataRowCount\n};\nreturn [msg, problems.length ? msg : null];",
+    "outputs": 2,
+    "x": 460,
+    "y": 160,
+    "wires": [ [ "n_wdrt_stringify" ], [ "n_wdrt_debug_problems" ] ]
+  },
+  {
+    "id": "n_wdrt_stringify",
+    "type": "function",
+    "z": "tab_wdr_test",
+    "name": "Force readable text",
+    "func": "try {\n    msg.payload = JSON.stringify(msg.payload, null, 2);\n} catch (e) {\n    msg.payload = 'JSON.stringify failed: ' + e.message;\n}\nreturn msg;",
+    "outputs": 1,
+    "x": 720,
+    "y": 200,
+    "wires": [ [ "n_wdrt_debug_result" ] ]
+  },
+  {
+    "id": "n_wdrt_debug_result",
+    "type": "debug",
+    "z": "tab_wdr_test",
+    "name": "RESULT",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 940,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "n_wdrt_debug_problems",
+    "type": "debug",
+    "z": "tab_wdr_test",
+    "name": "PROBLEMS FOUND (also fires node status)",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload.problems",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 460,
+    "y": 240,
+    "wires": []
+  }
+]

@@ -171,6 +171,16 @@ Open questions to resolve before building:
 - Should a failed scheduled pull email/notify Ward, or just log to `oura_tokens`' existing `last_attempt_*` columns for him to notice on his own next visit to `oura_sync.php`/`debug.php`?
 - Extend the same mechanism to any other future outside data source, not just Oura.
 
+### Therapy schedule end date
+
+`therapy_schedules` currently has `start_date` + `frequency_days` (the recurrence cycle) + `active` (an on/off flag), but no real end date — there's no way to record *when* a schedule actually stopped, only whether it's currently active or "Paused" (`therapy_schedules.php`'s own label for `active = 0`). Ward wants an actual end date added — the same "from ... to" shape `medications` already has (`start_date`/`end_date`), rather than just a binary flag with no date attached. Deferred to a future revision (Ward, Aug 2026), not scoped in detail yet — recorded here so it isn't lost.
+
+Needs, when actually built:
+- New `therapy_schedules.end_date DATE NULL` column.
+- `therapy_schedule_form.php` gets an end-date input, same as `medication_form.php`'s.
+- Decide how `end_date` relates to the existing `active` flag — do they both stay and need to be kept consistent with each other, or does `end_date` replace `active` outright (e.g. "active" becomes shorthand for `end_date IS NULL`, matching how `medications.end_date` already works without a separate boolean)?
+- Whatever computes "is a session due today" from a schedule needs to respect `end_date` the same way `medication_due_on()` (`db.php`) already respects `medications.end_date`.
+
 ### Historical analysis / correlation (caffeine, alcohol, incidents) — MOVED
 
 **Decided (see `../homeassistant/PLAN.md`): this now lives on the Home Assistant/InfluxDB side, not as a WardStock/PHP feature.** Ward confirmed HA is meant to be "our processing engine" for this kind of analysis, and InfluxDB's query language is a better fit for range-based correlation work than hand-rolled MySQL aggregates anyway. Don't build this in WardStock — check the HA plan doc for current status instead. The original framing (still relevant context for whoever builds it there) was: look for statistical relationships between logged consumption and incident occurrence/severity, be explicit about correlation vs. causation given a single person's small dataset, and lean toward surfacing uncertainty rather than asserting conclusions — Ward has been consistently skeptical elsewhere in this project of AI-driven pattern-finding without real domain expertise behind it.

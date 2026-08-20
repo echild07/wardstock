@@ -51,7 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 function sel($row, $key, $option, $default) { $cur = $row ? ($row[$key] ?? $default) : $default; return $cur === $option ? 'selected' : ''; }
 $startVal = $sched ? date('Y-m-d', strtotime($sched['start_date'])) : date('Y-m-d');
 $freqVal = $sched ? (int)$sched['frequency_days'] : 7;
-$active = 'therapy';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'therapy';
 ?>
 <!doctype html>
 <html>
@@ -72,6 +73,7 @@ $active = 'therapy';
     <a class="btn-link" href="therapy_schedules.php">← Back to list</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
   <?php if ($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?>
 

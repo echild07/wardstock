@@ -2,11 +2,16 @@
 
 *wherewhen is this engine's own name — "Lucius" is the umbrella project covering both this and the GoDaddy piece (WardStock), not a name for this engine specifically.*
 
-Five Node-RED flows: an Oura sync (every 4 hours, anchored 10am), a
-GoDaddy manual-data pull (every 15 min), a Body Composition Import
-(daily, ~noon — PLAN.md §14), a Status Heartbeat (every 15 min — PLAN.md
-§15, feeds the GoDaddy-side `status.php`), plus the System Test
-diagnostic flow (manual, not scheduled). **Nothing in this folder has
+Five REQUIRED Node-RED flows: an Oura sync (every 4 hours, anchored
+10am), a GoDaddy manual-data pull (every 15 min), a Body Composition
+Import (daily, ~noon — PLAN.md §14), a Status Heartbeat (every 15 min —
+PLAN.md §15, feeds the GoDaddy-side `status.php`), plus the System Test
+diagnostic flow (manual, not scheduled). Plus five OPTIONAL flows, built
+for the Fulgrim (3.x) line — see "Optional flows" below: Oura Backfill
+(manual), Medical History Import (manual — PLAN.md §19), wherewhen Data
+Export (manual + weekly — PLAN.md §20), wherewhen Data Restore (manual —
+PLAN.md §20), and the Analysis Engine (daily/weekly/monthly + manual —
+PLAN.md §11, the ~20-analysis Flux engine). **Nothing in this folder has
 been run against a live stack — see the "What's verified vs. not" note
 at the bottom before trusting this in production.**
 
@@ -78,14 +83,47 @@ In Node-RED: Menu → Import → paste the contents of
 `nodered/body_comp_import_flow.json`, `nodered/status_heartbeat_flow.json`,
 and `nodered/system_test_flow.json` (five separate imports).
 
-**Optional sixth flow, not part of the required setup sequence:**
-`nodered/oura_backfill_flow.json` — a manual, on-demand tool to backfill
-full historical Oura data straight into InfluxDB (past the curated
-subset a manual GoDaddy pull gives you), for whatever range you set on
-its inject node before clicking. See the flow's own tab `info` in the
-Node-RED editor for full usage details, or `PLAN.md` §17. Import it the
-same way, whenever you actually want to run a backfill — no harm in
-leaving it out until then.
+**Optional flows, not part of the required setup sequence** — import
+any/all whenever you actually want them, no harm leaving any out until
+then. See each flow's own tab `info` in the Node-RED editor for full
+usage details.
+
+- `nodered/oura_backfill_flow.json` — manual, on-demand tool to backfill
+  full historical Oura data straight into InfluxDB (past the curated
+  subset a manual GoDaddy pull gives you), for whatever range you set on
+  its inject node before clicking. `PLAN.md` §17. No companion test flow
+  (deliberate exception, PLAN.md §2 — this flow already is a manual
+  diagnostic tool in its own right).
+- `nodered/medical_history_import_flow.json` — manual, watches
+  `/share/lucius_medical_history_import/` for structured YAML files and
+  upserts incidents from them. `PLAN.md` §19. Companion test:
+  `medical_history_import_test.json`.
+- `nodered/wherewhen_data_export_flow.json` — manual + weekly (Sunday
+  3am), backs up everything InfluxDB holds (the high-fidelity Oura
+  archive, decomposed series, body composition, analysis results,
+  everything else with no other backup) to `/share/lucius_data_backup/`.
+  `PLAN.md` §20. No dedicated test flow of its own — see
+  `wherewhen_data_restore_test.json`, which exercises the shared CSV
+  parsing logic both flows depend on.
+- `nodered/wherewhen_data_restore_flow.json` — manual only, restores from
+  a wherewhen Data Export backup into a fresh InfluxDB (the
+  wipe/migrate-HA scenario). The highest-stakes flow in this project per
+  its own tab info — read that before running it for real. `PLAN.md`
+  §20. Companion test: `wherewhen_data_restore_test.json`.
+- `nodered/analysis_engine_flow.json` — the Fulgrim Flux analysis engine
+  (`PLAN.md` §11): computes all ~20 planned analyses and pushes each to
+  GoDaddy's `analysis.php`. Daily (~12:15pm), weekly (Sunday 4am), and
+  monthly (1st, 5am) triggers are scheduled; a 4th, all-historical-data
+  tier is manual-only (same reasoning as Oura Backfill — the heaviest,
+  least time-sensitive tier). Companion test:
+  `analysis_engine_test.json`.
+
+Also create the two folders each file-drop flow expects, the same way
+you did for Body Composition Import below: `/share/lucius_medical_history_import/`
++ its own `processed/` subfolder for Medical History Import.
+`wherewhen_data_export_flow.json`/`wherewhen_data_restore_flow.json`
+create their own `/share/lucius_data_backup/<timestamp>/` directories on
+each run (via the `mkdir -p` exec node), nothing to pre-create.
 
 Also create the two folders the Body Composition Import flow expects
 (via Studio Code Server, Samba, or SSH — same access you used for step

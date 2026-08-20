@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS incidents (
     medical_evaluation_notes TEXT,
     related_medication_id INT NULL,                     -- optional, medical category
     free_notes TEXT,
+    external_ref VARCHAR(64) NULL UNIQUE,               -- e.g. medical-history YAML `id` slug (PLAN.md §19) —
+                                                          -- idempotency key for machine-created incidents only,
+                                                          -- never set/shown on the human incident_form.php
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -184,4 +187,63 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     computed_at DATETIME NULL,
     pushed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY analysis_period_version (analysis_key, period_type, period_start, period_end, analysis_version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Attention/reminder snoozes (Fulgrim, feature list §3.2/3.2.0) — one row
+-- per dismissed daily reminder. reminder_key is dated to the day the item
+-- was DUE (e.g. "med_2026-08-21"), not the day it was snoozed, so the
+-- snooze naturally expires the next calendar day without any cleanup job:
+-- tomorrow's occurrence is simply a different key. See app/attention.php.
+CREATE TABLE IF NOT EXISTS attention_snoozes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    reminder_key VARCHAR(80) NOT NULL,
+    snoozed_on DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY reminder_snooze_day (reminder_key, snoozed_on)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- "Hypothetical" correlation events (Fulgrim, feature list §3.2.2) — the
+-- not-yet-built Flux analysis engine will eventually write proposed
+-- events here for Ward to confirm (becomes a real incident, feeds
+-- wherewhen's future confidence) or deny (stays here as status='denied' —
+-- Ward's own framing: "log it to be investigated" rather than delete it).
+-- Page/queue is real and pushable now (GoDaddy-first build order); the
+-- producer side is future HA work. See app/analysis.php.
+CREATE TABLE IF NOT EXISTS proposed_events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    analysis_key VARCHAR(50) NOT NULL,
+    proposed_at DATETIME NOT NULL,
+    suggested_occurred_at DATETIME NULL,
+    suggested_category VARCHAR(20) NULL,
+    description TEXT NOT NULL,
+    confidence DECIMAL(4,3) NULL,
+    result_json LONGTEXT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'pending',  -- pending / confirmed / denied
+    reviewed_at DATETIME NULL,
+    review_notes TEXT NULL,
+    created_incident_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_incident_id) REFERENCES incidents(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Blood pressure readings (Fulgrim, feature list §1.2). A dedicated table
+-- rather than columns on daily_logs — unlike weight (one value/day), a
+-- real BP routine is typically 1-2+ timestamped readings/day (morning/
+-- evening), and a future importer from an actual BP machine will want
+-- per-reading granularity, not a collapsed daily value. Entry happens
+-- inline from the Daily Log page for a given date (app/daily_form.php),
+-- not a separate nav section. source distinguishes hand-entered rows from
+-- a future import, same idea as ha_sync_log distinguishing call origins.
+CREATE TABLE IF NOT EXISTS blood_pressure_readings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    reading_at DATETIME NOT NULL,
+    systolic SMALLINT UNSIGNED NOT NULL,
+    diastolic SMALLINT UNSIGNED NOT NULL,
+    pulse SMALLINT UNSIGNED NULL,
+    position VARCHAR(20) NULL,                      -- seated / standing / lying — optional, affects reading accuracy
+    notes TEXT NULL,
+    source VARCHAR(20) NOT NULL DEFAULT 'manual',    -- manual / import
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_reading_at (reading_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

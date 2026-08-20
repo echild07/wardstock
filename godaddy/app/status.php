@@ -10,7 +10,8 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$active = 'status';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'status';
 
 $rows = $pdo->query('SELECT * FROM system_status_reports ORDER BY category, component')->fetchAll();
 
@@ -21,24 +22,9 @@ foreach ($rows as $r) {
     }
 }
 
-// Overdue = elapsed time since last_run_at exceeds the component's own
-// expected cadence plus a grace buffer. The buffer scales with the
-// cadence itself (min 15 minutes) rather than a single fixed ratio —
-// PLAN.md §15 only gave illustrative examples ("~4.5h" for a 4h
-// schedule, "~20min" for a 15min one), not an exact formula, so this is
-// a deliberate, reasonable approximation, not a value Ward specified.
-function overdue_info($row) {
-    if (!$row['expected_frequency_minutes'] || !$row['last_run_at']) {
-        return null; // not schedule-based, or never reported — nothing to compute
-    }
-    $expected = (int)$row['expected_frequency_minutes'];
-    $buffer = max(15, (int)round($expected * 0.25));
-    $elapsedMin = (time() - strtotime($row['last_run_at'])) / 60;
-    return [
-        'elapsed_min' => $elapsedMin,
-        'is_overdue' => $elapsedMin > ($expected + $buffer),
-    ];
-}
+// overdue_info() now lives in db.php (shared with the attention-reminder
+// banner on index.php, which uses the identical staleness check for the
+// Oura-sync reminder — see attention.php).
 
 function fmt_component($c) {
     $labels = [
@@ -46,6 +32,10 @@ function fmt_component($c) {
         'oura_sync' => 'Oura Sync (every 4h)',
         'godaddy_pull' => 'GoDaddy Pull (every 15min)',
         'bodycomp_import' => 'Body Composition Import (daily, ~noon)',
+        'medical_history_import' => 'Medical History Import (manual/on-demand)',
+        'wherewhen_export' => 'wherewhen Data Export (manual + weekly Sun 3am)',
+        'wherewhen_restore' => 'wherewhen Data Restore (manual/on-demand)',
+        'analysis_engine' => 'wherewhen Analysis Engine (daily/weekly/monthly + manual all-data)',
     ];
     return $labels[$c] ?? htmlspecialchars($c);
 }
@@ -69,6 +59,7 @@ function fmt_component($c) {
     <a class="btn-link" href="index.php">← Back to dashboard</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
   <p class="hint">HA / Node-RED / Analytics, reported here every ~15 minutes by the Home Assistant piece's Status Heartbeat flow (PLAN.md §15). This page only reads what was last reported — it doesn't reach out to HA itself.</p>
   <p class="hint">Related: <a href="debug.php">Debug / Version →</a> · <a href="oura_test.php">Oura Connection Test →</a></p>

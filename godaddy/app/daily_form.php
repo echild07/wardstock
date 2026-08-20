@@ -29,6 +29,39 @@ if ($log && $log['medications_taken_json']) {
     if (is_array($decoded)) $takenIds = array_map('intval', $decoded);
 }
 
+// Blood pressure readings (Fulgrim, feature list §1.2) — a separate
+// table, not daily_logs columns, so entries have their own add/delete
+// handling here rather than riding along with the main log save below.
+// Handled first and returns early, same early-branch pattern as the
+// existing delete handler further down.
+$bpBackParam = $id ? 'id=' . $id : 'date=' . $dateValue;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bp_action'])) {
+    if ($_POST['bp_action'] === 'add') {
+        $readingAt = $_POST['bp_reading_at'] ?? '';
+        $systolic = $_POST['bp_systolic'] ?? '';
+        $diastolic = $_POST['bp_diastolic'] ?? '';
+        if ($readingAt !== '' && $systolic !== '' && $diastolic !== '') {
+            $stmt = $pdo->prepare('INSERT INTO blood_pressure_readings (reading_at, systolic, diastolic, pulse, position, notes) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->execute([
+                str_replace('T', ' ', $readingAt) . ':00',
+                (int)$systolic,
+                (int)$diastolic,
+                $_POST['bp_pulse'] === '' ? null : (int)$_POST['bp_pulse'],
+                $_POST['bp_position'] === '' ? null : $_POST['bp_position'],
+                trim($_POST['bp_notes'] ?? '') ?: null,
+            ]);
+        }
+    } elseif ($_POST['bp_action'] === 'delete' && isset($_POST['bp_id'])) {
+        $stmt = $pdo->prepare('DELETE FROM blood_pressure_readings WHERE id = ?');
+        $stmt->execute([(int)$_POST['bp_id']]);
+    }
+    header('Location: daily_form.php?' . $bpBackParam . '#section-bloodpressure');
+    exit;
+}
+$stmt = $pdo->prepare('SELECT * FROM blood_pressure_readings WHERE DATE(reading_at) = ? ORDER BY reading_at');
+$stmt->execute([$dateValue]);
+$bpReadings = $stmt->fetchAll();
+
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
@@ -141,6 +174,49 @@ $active = 'daily';
   <?php endif; ?>
 
   <p class="hint"><a href="oura_sync.php?date=<?= htmlspecialchars($dateValue) ?>">⬇ Pull from Oura</a> for this date (sleep, resting HR, HRV, steps)</p>
+
+  <fieldset id="section-bloodpressure">
+    <legend>Blood pressure</legend>
+    <p class="hint">One or more readings for <?= htmlspecialchars(date('M j, Y', strtotime($dateValue))) ?> — separate from the rest of the log below since a day can have more than one. <a href="blood_pressure_trend.php">View trend →</a></p>
+    <?php if (!$bpReadings): ?>
+      <p class="hint">No readings logged for this date yet.</p>
+    <?php else: ?>
+      <div style="margin-bottom: 14px;">
+        <?php foreach ($bpReadings as $bp): $cat = bp_category($bp['systolic'], $bp['diastolic']); ?>
+          <div class="bp-reading-row">
+            <span>
+              <?= htmlspecialchars(date('g:i A', strtotime($bp['reading_at']))) ?> —
+              <strong><?= (int)$bp['systolic'] ?>/<?= (int)$bp['diastolic'] ?></strong><?= $bp['pulse'] !== null ? ' · ' . (int)$bp['pulse'] . ' bpm' : '' ?>
+              <span class="tag <?= bp_category_tag_class($cat) ?>"><?= htmlspecialchars(bp_category_label($cat)) ?></span>
+              <?php if ($bp['position']): ?><span class="hint">(<?= htmlspecialchars($bp['position']) ?>)</span><?php endif; ?>
+            </span>
+            <form method="post">
+              <input type="hidden" name="bp_action" value="delete">
+              <input type="hidden" name="bp_id" value="<?= (int)$bp['id'] ?>">
+              <button type="submit" class="btn-link" onclick="return confirm('Delete this reading?')">Delete</button>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+    <form method="post" class="grid4" style="align-items: end;">
+      <input type="hidden" name="bp_action" value="add">
+      <label>Time <input type="datetime-local" name="bp_reading_at" value="<?= htmlspecialchars($dateValue) ?>T08:00" required></label>
+      <label>Systolic <input type="number" min="50" max="260" name="bp_systolic" required></label>
+      <label>Diastolic <input type="number" min="30" max="180" name="bp_diastolic" required></label>
+      <label>Pulse <input type="number" min="20" max="220" name="bp_pulse"></label>
+      <label>Position
+        <select name="bp_position">
+          <option value="">— Not specified —</option>
+          <option value="seated">Seated</option>
+          <option value="standing">Standing</option>
+          <option value="lying">Lying down</option>
+        </select>
+      </label>
+      <label style="grid-column: span 3;">Notes <input type="text" name="bp_notes"></label>
+      <div class="form-actions" style="padding-bottom: 0;"><button type="submit">+ Add reading</button></div>
+    </form>
+  </fieldset>
 
   <form method="post" class="incident-form">
     <fieldset id="section-date">

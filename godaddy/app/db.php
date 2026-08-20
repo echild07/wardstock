@@ -75,6 +75,59 @@ function push_weight_if_unset($pdo, $date, $weightLb) {
     return true;
 }
 
+// Overdue = elapsed time since last_run_at exceeds the component's own
+// expected cadence plus a grace buffer. The buffer scales with the
+// cadence itself (min 15 minutes) rather than a single fixed ratio —
+// PLAN.md §15 only gave illustrative examples ("~4.5h" for a 4h
+// schedule, "~20min" for a 15min one), not an exact formula, so this is
+// a deliberate, reasonable approximation, not a value Ward specified.
+// Originally lived only in status.php; moved here (Fulgrim, attention
+// reminders) so index.php's Oura-stale reminder uses the exact same
+// staleness logic status.php already displays, instead of a second
+// copy that could quietly drift from it.
+function overdue_info($row) {
+    if (!$row['expected_frequency_minutes'] || !$row['last_run_at']) {
+        return null; // not schedule-based, or never reported — nothing to compute
+    }
+    $expected = (int)$row['expected_frequency_minutes'];
+    $buffer = max(15, (int)round($expected * 0.25));
+    $elapsedMin = (time() - strtotime($row['last_run_at'])) / 60;
+    return [
+        'elapsed_min' => $elapsedMin,
+        'is_overdue' => $elapsedMin > ($expected + $buffer),
+    ];
+}
+
+// Blood pressure category, AHA's standard consumer thresholds (Fulgrim,
+// feature list §1.2) — display/color coding only, same "not medical
+// advice, more for fun with data" framing Ward gave the whole feature.
+// Shared by daily_form.php's reading list, index.php's dashboard pill,
+// and blood_pressure_trend.php.
+function bp_category($systolic, $diastolic) {
+    if ($systolic === null || $diastolic === null) return null;
+    $s = (float)$systolic; $d = (float)$diastolic;
+    if ($s > 180 || $d > 120) return 'crisis';
+    if ($s >= 140 || $d >= 90) return 'stage2';
+    if ($s >= 130 || $d >= 80) return 'stage1';
+    if ($s >= 120) return 'elevated';
+    return 'normal';
+}
+function bp_category_label($cat) {
+    $labels = ['normal' => 'Normal', 'elevated' => 'Elevated', 'stage1' => 'High (Stage 1)', 'stage2' => 'High (Stage 2)', 'crisis' => 'Very high'];
+    return $labels[$cat] ?? 'Unknown';
+}
+// Reuses the app's existing 3-tier pill palette (good/neutral/bad) rather
+// than inventing a 5th color for a 5-category scale.
+function bp_category_pill_class($cat) {
+    $classes = ['normal' => 'pill-good', 'elevated' => 'pill-neutral', 'stage1' => 'pill-neutral', 'stage2' => 'pill-bad', 'crisis' => 'pill-bad'];
+    return $classes[$cat] ?? 'pill-zero';
+}
+// Reuses the existing severity-tag palette (incidents' lvl-mild/moderate/severe).
+function bp_category_tag_class($cat) {
+    $classes = ['normal' => 'lvl-mild', 'elevated' => 'lvl-moderate', 'stage1' => 'lvl-moderate', 'stage2' => 'lvl-severe', 'crisis' => 'lvl-severe'];
+    return $classes[$cat] ?? '';
+}
+
 // Was duplicated separately in export.php and debug.php — consolidated
 // here since more files (the new api/*.php endpoints) now need it too.
 function get_setting($pdo, $key) {
@@ -148,6 +201,27 @@ function build_export_records($pdo, $since, $types) {
         $stmt = $pdo->prepare($sql);
         if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
         foreach ($stmt->fetchAll() as $row) { $row['record_type'] = 'therapy_session'; $data['records'][] = $row; }
+    }
+
+    if (in_array('medication_dosage_history', $types)) {
+        // Insert-only table (medication_form.php only ever INSERTs here,
+        // never UPDATEs), so unlike medications a since-filter on
+        // created_at is safe — no risk of missing an in-place edit that
+        // doesn't touch created_at. medication_name is denormalized via
+        // the join specifically because medication_id isn't portable
+        // across a reimport (see import.php's handling of this type) —
+        // medications get re-matched/re-inserted by (name, start_date),
+        // which can assign a different id on the target database.
+        $sql = 'SELECT h.*, m.name AS medication_name FROM medication_dosage_history h
+                JOIN medications m ON m.id = h.medication_id'
+                . ($since ? ' WHERE h.created_at > :since' : '') . ' ORDER BY h.changed_at';
+        $stmt = $pdo->prepare($sql);
+        if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
+        foreach ($stmt->fetchAll() as $row) {
+            unset($row['medication_id']);
+            $row['record_type'] = 'medication_dosage_history';
+            $data['records'][] = $row;
+        }
     }
 
     return $data;

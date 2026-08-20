@@ -40,11 +40,21 @@ $pdo = get_db();
 $state = bin2hex(random_bytes(16));
 $_SESSION['oura_oauth_state'] = $state;
 
+// Expanded Aug 2026 (Fulgrim/wherewhen, homeassistant/PLAN.md §1) — Ward
+// wants everything reasonably available from Oura pulled and stored, not
+// just what the original 3 endpoints (sleep/daily_activity/daily_readiness)
+// needed. 'daily' and 'heartrate' were already requested; workout/session/
+// spo2/tag are new. Scope names confirmed via web search against Oura's
+// real documented scope list (Aug 2026): the 8 available scopes are
+// email, personal, daily, heartrate, workout, tag, session, spo2 — this
+// requests all of them. Not verified against a live reconnect yet — if
+// Oura's consent screen rejects or silently drops any of these, that's
+// the first thing to check before assuming a code bug.
 $authUrl = 'https://cloud.ouraring.com/oauth/authorize?' . http_build_query([
     'response_type' => 'code',
     'client_id' => OURA_CLIENT_ID,
     'redirect_uri' => OURA_REDIRECT_URI,
-    'scope' => 'daily heartrate sleep',
+    'scope' => 'email personal daily heartrate workout session tag spo2',
     'state' => $state,
 ]);
 

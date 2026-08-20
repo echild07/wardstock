@@ -80,6 +80,13 @@ CALL lucius_add_column_if_missing('incidents', 'lethargy_sensation', "VARCHAR(20
 -- safe to just leave unused if it turns out not to be wanted.
 CALL lucius_add_column_if_missing('incidents', 'related_medication_id', 'INT NULL AFTER medical_evaluation_notes');
 
+-- 3.1: incidents — idempotency key for machine-created incidents (PLAN.md
+-- §19's medical-history YAML import), since incidents otherwise have no
+-- reliable natural key (see import.php's own comment on this). Never
+-- set/shown on the human incident_form.php — purely for the import flow
+-- to detect "already imported" on a rerun.
+CALL lucius_add_column_if_missing('incidents', 'external_ref', 'VARCHAR(64) NULL UNIQUE AFTER free_notes');
+
 -- 3.1: daily_logs — night-waking context (PLAN.md §11 #16): why Ward
 -- woke and what he was thinking, not just Oura's raw sleep-stage data.
 -- Simplest shape per the plan's own stated fallback — free text on the
@@ -105,9 +112,61 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     UNIQUE KEY analysis_period_version (analysis_key, period_type, period_start, period_end, analysis_version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 3.1: attention/reminder snoozes (Fulgrim, feature list §3.2/3.2.0) — one
+-- row per dismissed daily reminder, keyed by reminder+due-day so a snooze
+-- naturally expires the next calendar day with no cleanup job needed. See
+-- app/attention.php.
+CREATE TABLE IF NOT EXISTS attention_snoozes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    reminder_key VARCHAR(80) NOT NULL,
+    snoozed_on DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY reminder_snooze_day (reminder_key, snoozed_on)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3.1: "hypothetical" correlation events (Fulgrim, feature list §3.2.2) —
+-- the not-yet-built Flux engine will eventually write proposed events
+-- here for Ward to confirm (becomes a real incident) or deny (stays here
+-- as status='denied', Ward's own "log it to be investigated" framing).
+-- Queue/page built now (GoDaddy-first); producer side is future HA work.
+CREATE TABLE IF NOT EXISTS proposed_events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    analysis_key VARCHAR(50) NOT NULL,
+    proposed_at DATETIME NOT NULL,
+    suggested_occurred_at DATETIME NULL,
+    suggested_category VARCHAR(20) NULL,
+    description TEXT NOT NULL,
+    confidence DECIMAL(4,3) NULL,
+    result_json LONGTEXT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'pending',
+    reviewed_at DATETIME NULL,
+    review_notes TEXT NULL,
+    created_incident_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_incident_id) REFERENCES incidents(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3.1: blood pressure readings (Fulgrim, feature list §1.2) — dedicated
+-- table (not daily_logs columns) since a real BP routine is 1-2+
+-- timestamped readings/day, unlike weight's one-value-per-day. Entered
+-- inline from the Daily Log page. See app/daily_form.php.
+CREATE TABLE IF NOT EXISTS blood_pressure_readings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    reading_at DATETIME NOT NULL,
+    systolic SMALLINT UNSIGNED NOT NULL,
+    diastolic SMALLINT UNSIGNED NOT NULL,
+    pulse SMALLINT UNSIGNED NULL,
+    position VARCHAR(20) NULL,
+    notes TEXT NULL,
+    source VARCHAR(20) NOT NULL DEFAULT 'manual',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_reading_at (reading_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 DROP PROCEDURE lucius_add_column_if_missing;
 
 -- Version tracking (always safe to (re-)stamp — this is the current
--- state of the 3.x line as of this file's last update, Major.SQL = "3.1").
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.1')
-ON DUPLICATE KEY UPDATE setting_value = '3.1';
+-- state of the 3.x line as of this file's last update, Major.SQL = "3.2").
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.2')
+ON DUPLICATE KEY UPDATE setting_value = '3.2';

@@ -5,7 +5,8 @@ require_once __DIR__ . '/oura.php';
 require_login();
 
 $pdo = get_db();
-$active = 'status';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'status';
 
 function mask($value, $showStart = 4, $showEnd = 4) {
     if ($value === null || $value === '') return '(empty)';
@@ -171,6 +172,7 @@ $haSyncHistory = $pdo->query('SELECT * FROM ha_sync_log ORDER BY called_at DESC 
     <a class="btn-link" href="status.php">← Back to Status</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
   <p class="hint">Diagnostic page — nothing here is sent anywhere except to Oura's own servers when you click a test button. If something's failing, copy the relevant section below and share it for help troubleshooting; access/refresh tokens and the client secret are masked so it's safe to paste.</p>
 

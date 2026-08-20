@@ -1,9 +1,22 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/attention.php';
 require_login();
 
 $pdo = get_db();
+
+// Snooze a reminder — POST-only, redirects back rather than rendering, so
+// a page refresh after snoozing never re-submits the form.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['snooze_key'])) {
+    snooze_reminder($pdo, $_POST['snooze_key']);
+    header('Location: index.php#attention');
+    exit;
+}
+
+$attentionItems = get_attention_items($pdo);
+$pendingEventCount = get_pending_event_count($pdo);
+
 $incCount = (int)$pdo->query('SELECT COUNT(*) c FROM incidents')->fetch()['c'];
 $dailyCount = (int)$pdo->query('SELECT COUNT(*) c FROM daily_logs')->fetch()['c'];
 $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fetch()['c'];
@@ -60,14 +73,15 @@ $stmt = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date >= ?');
 $stmt->execute([$oldestDay]);
 foreach ($stmt->fetchAll() as $row) { $dailyByDay[$row['log_date']] = $row; }
 
+// Blood pressure readings by day (Fulgrim, feature list §1.2) — a day can
+// have more than one, grouped here for the dashboard pill (see bp_pill()).
+$bpByDay = [];
+$stmt = $pdo->prepare('SELECT * FROM blood_pressure_readings WHERE reading_at >= ? ORDER BY reading_at');
+$stmt->execute([$oldestDay . ' 00:00:00']);
+foreach ($stmt->fetchAll() as $row) { $bpByDay[date('Y-m-d', strtotime($row['reading_at']))][] = $row; }
+
 $allMeds = $pdo->query("SELECT * FROM medications WHERE med_type = 'scheduled' ORDER BY sort_order")->fetchAll();
-function meds_valid_on($allMeds, $day) {
-    $ids = [];
-    foreach ($allMeds as $m) {
-        if (medication_due_on($m, $day)) $ids[] = (int)$m['id'];
-    }
-    return $ids;
-}
+// meds_valid_on() now lives in attention.php (shared with the attention banner).
 
 $schedules = $pdo->query('SELECT * FROM therapy_schedules WHERE active = 1')->fetchAll();
 $therapyByDay = [];
@@ -77,15 +91,7 @@ foreach ($stmt->fetchAll() as $row) {
     $d = date('Y-m-d', strtotime($row['session_date']));
     $therapyByDay[$d][$row['session_type']] = $row;
 }
-function therapy_due_types($schedules, $day) {
-    $due = [];
-    foreach ($schedules as $s) {
-        if ($day < $s['start_date']) continue;
-        $diffDays = (strtotime($day) - strtotime($s['start_date'])) / 86400;
-        if ($diffDays >= 0 && $diffDays % $s['frequency_days'] == 0) $due[] = $s['session_type'];
-    }
-    return array_unique($due);
-}
+// therapy_due_types() now lives in attention.php (shared with the attention banner).
 
 // Simple native icons (no external library) prefixed to each pill so the
 // dashboard reads faster on a small screen — category is icon, text is
@@ -99,6 +105,7 @@ $icons = [
     'weight' => '⚖️',
     'sleep' => '😴',
     'mind' => '🧠',
+    'bp' => '🩺',
 ];
 
 function pill($ok, $label, $href, $extraClass = '') {
@@ -145,6 +152,25 @@ function sleep_pill($value, $href, $icon) {
     if ($value === null) return '<a class="pill pill-bad" href="' . htmlspecialchars($href) . '">' . $icon . '</a>';
     return '<a class="pill pill-good" href="' . htmlspecialchars($href) . '">' . $icon . ' ' . htmlspecialchars((int)$value) . '%</a>';
 }
+// Blood pressure pill (Fulgrim, feature list §1.2) — same "missing =
+// pill-bad" convention as weight_pill/sleep_pill when there's no reading
+// at all. When there IS at least one reading, color reflects the day's
+// WORST category (not just the latest) so a concerning morning reading
+// doesn't get visually buried by a better evening one; the number shown
+// is the most recent reading, since that's what "today's BP" usually
+// means in conversation.
+function bp_pill($dayReadings, $href, $icon) {
+    if (!$dayReadings) return '<a class="pill pill-bad" href="' . htmlspecialchars($href) . '">' . $icon . '</a>';
+    $severityOrder = ['normal' => 0, 'elevated' => 1, 'stage1' => 2, 'stage2' => 3, 'crisis' => 4];
+    $worst = 'normal';
+    foreach ($dayReadings as $r) {
+        $cat = bp_category($r['systolic'], $r['diastolic']);
+        if ($cat && $severityOrder[$cat] > $severityOrder[$worst]) $worst = $cat;
+    }
+    $latest = $dayReadings[count($dayReadings) - 1];
+    $cls = bp_category_pill_class($worst);
+    return '<a class="pill ' . $cls . '" href="' . htmlspecialchars($href) . '">' . $icon . ' ' . (int)$latest['systolic'] . '/' . (int)$latest['diastolic'] . '</a>';
+}
 function daily_href($log, $day, $anchor) {
     $base = $log ? 'daily_form.php?id=' . (int)$log['id'] : 'daily_form.php?date=' . $day;
     return $base . '&jump=' . $anchor;
@@ -179,8 +205,30 @@ function som_pill($value, $href, $somLabels, $icon) {
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
 
+  <?php if ($attentionItems || $pendingEventCount): ?>
+  <div id="attention" class="attention-banner">
+    <h3 class="section-label">Attention needed</h3>
+    <?php foreach ($attentionItems as $item): ?>
+      <div class="attention-item">
+        <a class="attention-item-label" href="<?= htmlspecialchars($item['href']) ?>"><?= htmlspecialchars($item['label']) ?></a>
+        <?php if ($item['snoozable']): ?>
+          <form method="post" action="index.php#attention" class="attention-snooze-form">
+            <input type="hidden" name="snooze_key" value="<?= htmlspecialchars($item['key']) ?>">
+            <button type="submit" class="btn-link attention-snooze-btn">Snooze until tomorrow</button>
+          </form>
+        <?php endif; ?>
+      </div>
+    <?php endforeach; ?>
+    <?php if ($pendingEventCount): ?>
+      <div class="attention-item">
+        <a class="attention-item-label" href="analysis.php"><?= $pendingEventCount ?> proposed correlation event<?= $pendingEventCount === 1 ? '' : 's' ?> awaiting your review →</a>
+      </div>
+    <?php endif; ?>
+  </div>
+  <?php endif; ?>
+
   <h3 class="section-label">Last 7 days</h3>
-  <p class="hint" style="margin-top:-10px;"><a href="weight_trend.php">View weight trend (last 2 months) →</a></p>
+  <p class="hint" style="margin-top:-10px;"><a href="weight_trend.php">View weight trend (last 2 months) →</a> · <a href="blood_pressure_trend.php">View BP trend →</a></p>
   <div class="week-summary">
     <?php foreach ($days as $day):
         $dayIncCount = $incByDay[$day] ?? 0;
@@ -206,6 +254,7 @@ function som_pill($value, $href, $somLabels, $icon) {
         <?= consumption_pill($log ? $log['alcohol_drinks'] : null, daily_href($log, $day, 'section-alcohol'), $icons['alcohol']) ?>
         <?= medication_pill($log, $validMedIds, daily_href($log, $day, 'section-medication'), $icons['medication']) ?>
         <?= weight_pill($log ? $log['weight'] : null, daily_href($log, $day, 'section-weight'), $icons['weight']) ?>
+        <?= bp_pill($bpByDay[$day] ?? [], daily_href($log, $day, 'section-bloodpressure'), $icons['bp']) ?>
         <?= sleep_pill($log ? $log['sleep_efficiency'] : null, daily_href($log, $day, 'section-sleep'), $icons['sleep']) ?>
       </div>
       <?php if ($dueTypes): ?>

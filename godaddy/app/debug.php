@@ -5,7 +5,8 @@ require_once __DIR__ . '/app_version.php';
 require_login();
 
 $pdo = get_db();
-$active = 'status';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'status';
 
 $dbVersion = get_setting($pdo, 'db_version');
 $inSync = ($dbVersion === APP_VERSION_SCHEMA);
@@ -29,6 +30,7 @@ $inSync = ($dbVersion === APP_VERSION_SCHEMA);
     <a class="btn-link" href="status.php">← Back to Status</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
   <table class="day-table">
     <tbody>

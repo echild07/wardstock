@@ -5,7 +5,8 @@ require_login();
 
 $pdo = get_db();
 $schedules = $pdo->query('SELECT * FROM therapy_schedules ORDER BY active DESC, session_type')->fetchAll();
-$active = 'therapy';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'therapy';
 $typeLabel = ['individual' => 'Individual', 'couples' => 'Couples', 'other' => 'Other'];
 ?>
 <!doctype html>
@@ -30,6 +31,7 @@ $typeLabel = ['individual' => 'Individual', 'couples' => 'Couples', 'other' => '
     <a class="btn" href="therapy_schedule_form.php">+ New</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
   <p class="hint">Recurring plans — the dashboard uses these to show a reminder on days a session is due, until you log what happened in <a href="therapy.php">Therapy</a>.</p>
 

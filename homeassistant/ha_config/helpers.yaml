@@ -16,6 +16,16 @@ input_datetime:
     name: "Lucius: Oura last attempt"
     has_date: true
     has_time: true
+  lucius_oura_last_data_date:
+    name: "Lucius: Oura last confirmed data date"
+    has_date: true
+    has_time: true
+    # Self-heal fix (wherewhen/Fulgrim, PLAN.md §1 TODO) — the Oura Sync
+    # flow's fetch-window start, so a missed run's gap gets caught up
+    # automatically instead of silently staying missing. has_time: true
+    # (not date-only) so this is the same SHAPE as every other helper
+    # here and reuses the same proven set_datetime service-call path —
+    # the flow always writes/reads it noon-anchored.
   lucius_godaddy_last_success:
     name: "Lucius: GoDaddy last successful pull"
     has_date: true
@@ -32,6 +42,38 @@ input_datetime:
     name: "Lucius: Body Composition Import last attempt"
     has_date: true
     has_time: true
+  lucius_mhi_last_success:
+    name: "Lucius: Medical History Import last success"
+    has_date: true
+    has_time: true
+  lucius_mhi_last_attempt:
+    name: "Lucius: Medical History Import last attempt"
+    has_date: true
+    has_time: true
+  lucius_wherewhen_export_last_success:
+    name: "wherewhen: Data Export last success"
+    has_date: true
+    has_time: true
+  lucius_wherewhen_export_last_attempt:
+    name: "wherewhen: Data Export last attempt"
+    has_date: true
+    has_time: true
+  lucius_wherewhen_restore_last_success:
+    name: "wherewhen: Data Restore last success"
+    has_date: true
+    has_time: true
+  lucius_wherewhen_restore_last_attempt:
+    name: "wherewhen: Data Restore last attempt"
+    has_date: true
+    has_time: true
+  lucius_analysis_engine_last_success:
+    name: "wherewhen: Analysis Engine last success"
+    has_date: true
+    has_time: true
+  lucius_analysis_engine_last_attempt:
+    name: "wherewhen: Analysis Engine last attempt"
+    has_date: true
+    has_time: true
 
 input_boolean:
   lucius_oura_last_attempt_ok:
@@ -40,6 +82,18 @@ input_boolean:
     name: "Lucius: GoDaddy last attempt OK"
   lucius_bodycomp_last_attempt_ok:
     name: "Lucius: Body Composition Import last attempt OK"
+  lucius_mhi_last_attempt_ok:
+    name: "Lucius: Medical History Import last attempt OK"
+  lucius_wherewhen_export_last_attempt_ok:
+    name: "wherewhen: Data Export last attempt OK"
+  lucius_wherewhen_restore_last_attempt_ok:
+    name: "wherewhen: Data Restore last attempt OK"
+    # Aug 2026: set 'off' whenever the verify-mode pass finds any warning
+    # (see wherewhen_data_restore_flow.json's n_wdr_job_success), not just
+    # on an outright write failure — a restore that "succeeded" but left
+    # a measurement with 0 points afterward should still show as not-OK.
+  lucius_analysis_engine_last_attempt_ok:
+    name: "wherewhen: Analysis Engine last attempt OK"
 
 input_text:
   lucius_oura_last_error:
@@ -50,4 +104,16 @@ input_text:
     max: 255
   lucius_bodycomp_last_error:
     name: "Lucius: Body Composition Import last error"
+    max: 255
+  lucius_mhi_last_error:
+    name: "Lucius: Medical History Import last error"
+    max: 255
+  lucius_wherewhen_export_last_error:
+    name: "wherewhen: Data Export last error"
+    max: 255
+  lucius_wherewhen_restore_last_error:
+    name: "wherewhen: Data Restore last error"
+    max: 255
+  lucius_analysis_engine_last_error:
+    name: "wherewhen: Analysis Engine last error"
     max: 255

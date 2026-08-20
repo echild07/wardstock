@@ -4,7 +4,8 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$active = 'export';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
+$subActive = 'export';
 $summary = null;
 $errors = [];
 
@@ -28,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'daily_log' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
                 'therapy_session' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
                 'medication' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
+                'medication_dosage_history' => ['inserted' => 0, 'skipped' => 0],
             ];
             $unmatchedMeds = [];
 
@@ -187,6 +189,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $stmt->execute($fields);
                             $counts['medication']['inserted']++;
                         }
+
+                    } elseif ($type === 'medication_dosage_history') {
+                        // Fulgrim/wherewhen (PLAN.md §11 #8). medication_id
+                        // isn't portable across a reimport — medications
+                        // above are matched/inserted by (name, start_date),
+                        // which can assign a different id on this database
+                        // than the source had. Resolve the target row via
+                        // medication_name + changed_at instead, since
+                        // medication_form.php always sets changed_at equal
+                        // to the new dosage era's own start_date. Insert-only
+                        // table (no update path exists), so a matching
+                        // existing row just means "already imported."
+                        if (empty($rec['medication_name']) || empty($rec['changed_at'])) {
+                            $counts['medication_dosage_history']['skipped']++; continue;
+                        }
+                        $medRow = $pdo->prepare('SELECT id FROM medications WHERE name = ? AND start_date = ?');
+                        $medRow->execute([$rec['medication_name'], substr($rec['changed_at'], 0, 10)]);
+                        $medId = $medRow->fetchColumn();
+                        if (!$medId) { $counts['medication_dosage_history']['skipped']++; continue; }
+
+                        $existing = $pdo->prepare('SELECT id FROM medication_dosage_history WHERE medication_id = ? AND changed_at = ?');
+                        $existing->execute([$medId, $rec['changed_at']]);
+                        if ($existing->fetch()) { $counts['medication_dosage_history']['skipped']++; continue; }
+
+                        $stmt = $pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
+                        $stmt->execute([$medId, $rec['old_dosage'] ?? null, $rec['new_dosage'] ?? '', $rec['changed_at'], $rec['notes'] ?? null]);
+                        $counts['medication_dosage_history']['inserted']++;
                     }
                 }
 
@@ -219,6 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <a class="btn-link" href="export.php">← Back to Export</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
   <p class="hint">
     Restores data from a WardStock export JSON file — for rebuilding after a database reset, or catching up
@@ -239,6 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <li>Daily Logs: <?= $summary['counts']['daily_log']['inserted'] ?> added, <?= $summary['counts']['daily_log']['updated'] ?> updated<?= $summary['counts']['daily_log']['skipped'] ? ', ' . $summary['counts']['daily_log']['skipped'] . ' skipped (missing date)' : '' ?></li>
         <li>Therapy sessions: <?= $summary['counts']['therapy_session']['inserted'] ?> added, <?= $summary['counts']['therapy_session']['updated'] ?> updated<?= $summary['counts']['therapy_session']['skipped'] ? ', ' . $summary['counts']['therapy_session']['skipped'] . ' skipped (missing date)' : '' ?></li>
         <li>Medications: <?= $summary['counts']['medication']['inserted'] ?> added, <?= $summary['counts']['medication']['updated'] ?> updated<?= $summary['counts']['medication']['skipped'] ? ', ' . $summary['counts']['medication']['skipped'] . ' skipped (missing name/start date)' : '' ?></li>
+        <li>Dosage history: <?= $summary['counts']['medication_dosage_history']['inserted'] ?> added<?= $summary['counts']['medication_dosage_history']['skipped'] ? ', ' . $summary['counts']['medication_dosage_history']['skipped'] . ' skipped (already present, or no matching medication)' : '' ?></li>
       </ul>
       <?php if ($summary['unmatchedMeds']): ?>
         <p class="error">These medication names from the file don't match anything in your current Medications list, so they were skipped when rebuilding the "taken" checklist for affected days: <?= htmlspecialchars(implode(', ', $summary['unmatchedMeds'])) ?>. If they've just been renamed, add them again under Medications and re-import.</p>

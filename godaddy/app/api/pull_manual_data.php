@@ -28,14 +28,12 @@ try {
     $lastPull = get_setting($pdo, 'last_ha_pull_at');
     $since = ($scope === 'since_last' && $lastPull) ? $lastPull : null;
 
-    // Full records: incidents, daily_logs, therapy_sessions, AND
-    // medications. Medications specifically diverges from what
-    // export.php ever requests — the human export deliberately leaves
-    // medication history out, but HA's disaster-recovery copy needs it
-    // (dosage history, start/end dates, frequency) to actually be a
-    // complete backup, not just resolved medication names embedded in
-    // daily logs.
-    $types = ['incidents', 'daily_logs', 'therapy_sessions', 'medications'];
+    // Full records: incidents, daily_logs, therapy_sessions, medications,
+    // AND medication_dosage_history (Fulgrim/wherewhen, PLAN.md §11 #8) —
+    // same reasoning as medications itself: export.php's human-facing
+    // export never requests these, but HA's disaster-recovery copy needs
+    // them to actually be complete.
+    $types = ['incidents', 'daily_logs', 'therapy_sessions', 'medications', 'medication_dosage_history'];
     $data = build_export_records($pdo, $since, $types);
     $data = array_merge(['pulled_at' => date('c'), 'scope' => $scope, 'since' => $since], $data);
 

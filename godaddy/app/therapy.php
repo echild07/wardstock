@@ -5,7 +5,8 @@ require_login();
 
 $pdo = get_db();
 $sessions = $pdo->query('SELECT * FROM therapy_sessions ORDER BY session_date DESC')->fetchAll();
-$active = 'therapy';
+$active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18) — Ward's own reasoning: therapy is itself a form of analysis
+$subActive = 'therapy';
 $typeLabel = ['individual' => 'Individual', 'couples' => 'Couples', 'other' => 'Other'];
 
 function avg_field($rows, $key) {
@@ -39,6 +40,7 @@ if ($lastSession) {
         'incidents' => $reportIncidents,
         'anxietyCount' => count(array_filter($reportIncidents, fn($i) => $i['category'] === 'anxiety')),
         'cardiacCount' => count(array_filter($reportIncidents, fn($i) => $i['category'] === 'cardiac')),
+        'medicalCount' => count(array_filter($reportIncidents, fn($i) => $i['category'] === 'medical')),
         'avgSleep' => avg_field($reportDailyLogs, 'sleep_duration_hrs'),
         'avgEfficiency' => avg_field($reportDailyLogs, 'sleep_efficiency'),
         'avgRHR' => avg_field($reportDailyLogs, 'resting_hr'),
@@ -74,13 +76,14 @@ $somLabels = [1 => 'Unpleasant', 2 => 'Slightly Unpleasant', 3 => 'Neutral', 4 =
     <a class="btn" href="therapy_form.php">+ New</a>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
+  <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
   <p class="hint"><a href="therapy_schedules.php">Manage recurring schedule →</a></p>
 
   <?php if ($report): ?>
   <h3 class="section-label">Since your last session — <?= htmlspecialchars(date('M j, Y', strtotime($report['since']))) ?> (<?= htmlspecialchars($typeLabel[$lastSession['session_type']] ?? $lastSession['session_type']) ?>)</h3>
   <div class="report-box">
     <div class="report-stats">
-      <div class="report-stat"><span class="report-num"><?= count($report['incidents']) ?></span><span class="report-label">Incidents (<?= $report['anxietyCount'] ?> anxiety, <?= $report['cardiacCount'] ?> cardiac)</span></div>
+      <div class="report-stat"><span class="report-num"><?= count($report['incidents']) ?></span><span class="report-label">Incidents (<?= $report['anxietyCount'] ?> anxiety, <?= $report['cardiacCount'] ?> cardiac<?= $report['medicalCount'] ? ', ' . $report['medicalCount'] . ' medical' : '' ?>)</span></div>
       <div class="report-stat"><span class="report-num"><?= $report['loggedDays'] ?>/<?= $report['daysInPeriod'] ?></span><span class="report-label">Days logged</span></div>
       <div class="report-stat"><span class="report-num"><?= fmt1($report['avgSom']) ?></span><span class="report-label">Avg state of mind (1–5)</span></div>
       <div class="report-stat"><span class="report-num"><?= $report['avgSleep'] !== null ? htmlspecialchars(fmt_hours_minutes($report['avgSleep'])) : '—' ?></span><span class="report-label">Avg sleep</span></div>
