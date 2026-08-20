@@ -11,7 +11,10 @@ $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fet
 // combined recent-activity feed across all three tables
 $recent = $pdo->query("
     (SELECT 'incident' AS type, id, occurred_at AS event_time,
-            CONCAT('Intensity ', COALESCE(anxiety_intensity, '?'), '/10') AS headline,
+            CASE category
+                WHEN 'medical' THEN CONCAT('Medical', IF(medical_evaluation = 'yes', ' — evaluation', ''))
+                ELSE CONCAT('Intensity ', COALESCE(anxiety_intensity, '?'), '/10')
+            END AS headline,
             NULL AS raw_sleep_hrs
      FROM incidents)
     UNION ALL

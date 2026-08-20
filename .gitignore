@@ -13,3 +13,7 @@ marketing/*.pdf
 # Working drop folders (see CLAUDE.md) — never part of the app, never committed
 /ForClaude/
 /ForWard/
+
+# Claude's private working memory (see CLAUDE.md) — sensitive personal
+# context, never part of the app, never committed
+/ClaudeMemory/

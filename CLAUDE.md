@@ -1,10 +1,10 @@
-# CLAUDE.md — Lucius / WardStock
+# CLAUDE.md — Fulgrim / WardStock
 
 Read this first. It points to the detailed docs rather than repeating them — check those before assuming something isn't already decided.
 
 ## What this is
 
-A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and doing local-only analysis (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **2.2.8 "Lucius"**.
+A two-piece personal health-tracking project for Ward. **`godaddy/`** — WardStock, a PHP/MySQL app on GoDaddy shared hosting (incidents, daily log, medications, therapy, dashboard). **`homeassistant/`** — Node-RED/InfluxDB running on Home Assistant, syncing with WardStock and running **wherewhen**, the local-only correlation-analysis engine (nothing raw ever leaves the home server). **`marketing/`** — LeeWard-branded flyer for the whole project. Full narrative: **`RETROSPECTIVE.md`**. Current version: **3.1.0 "Fulgrim"** (major line started Aug 2026 — see `homeassistant/PLAN.md` §11/§18-20 for what's driving it, and the "Outstanding work" section below for what's SQL/forms-only so far vs. still to build).
 
 ## Where the detail actually lives — read before making changes
 
@@ -23,6 +23,7 @@ Everything from the previous handoff (PROMPT.md, .gitignore/credential exposure,
 2. **DB password rotation in GoDaddy cPanel — Ward's own action, not something doable remotely.** The repo was briefly public with real credentials committed; they've since been rotated (APP_SECRET, API_SYNC_TOKEN) and scrubbed from git history, but the actual DB password itself still needs changing in cPanel.
 3. **Favicon legibility.** Icons now use Ward's own higher-fidelity, purpose-sized versions (no resampling on our end) — crisper than the first pass, but the 32×32 favicon is still hard to read at a glance since the design itself is detailed. A dedicated simplified mark would need new artwork, if that's ever worth doing.
 4. **Marketing PDF** — generated on demand only, not committed (gitignored). Regenerate via headless Edge/Chrome (`marketing/README.md` has the exact command) when actually needed.
+5. **Fulgrim (3.x) is mid-build, not finished** — SQL migration (`sql/upgrade_from_3.0.0.sql`, needs running in phpMyAdmin) and the GoDaddy forms that write the new columns (incident/daily-log/medication forms) are done. Still to build: the Node-RED side of the sync updates, the Oura self-heal fix, the Medical History Import flow, the sleep-stage hypnogram decomposition, the wherewhen backup/restore flows, the actual Flux analysis engine (~20 analyses), and the new "Where When" nav/Analysis/Status/Export/Therapy pages on GoDaddy. Full detail and current status: `homeassistant/PLAN.md` §11/§18-20; task list tracked in-session.
 
 ## Conventions worth knowing before touching anything
 
@@ -33,3 +34,4 @@ Everything from the previous handoff (PROMPT.md, .gitignore/credential exposure,
 - **`config/` (GoDaddy) is deliberately excluded from routine re-uploads** — never overwrite it blindly when redeploying `app/`.
 - **`/share`, not `/config`, for anything Node-RED needs to read/write on the HA side** — `/config` inside the Node-RED add-on's own container is a different directory than Home Assistant's real config, a genuinely confusing bug found the hard way (`homeassistant/PLAN.md`, third real bug in §2's fix log).
 - **`ForClaude/` and `ForWard/` are working drop folders, not part of the app — never git-tracked (see `.gitignore`).** Ward drops files for Claude to process into `ForClaude/`; once a file's been processed (its content extracted/used elsewhere in the repo), move it out of `ForClaude/` into `ForWard/` so `ForClaude/` stays clean for new incoming files. `ForWard/` is also where Claude puts files being handed back to Ward. Both live at the project root, sibling to `godaddy/`/`homeassistant/`.
+- **`ClaudeMemory/` holds Claude's own private working notes on sensitive personal context — never git-tracked (see `.gitignore`), never referenced with actual content in any tracked doc.** Distinct from `ForClaude/`/`ForWard/` (those are file-processing drop folders) and from Claude Code's own separate cross-session memory system — this is specifically where synthesized background context goes when Ward shares something private (e.g. personal medical/psychological history) that Claude should keep in mind for this project without it ever entering git history. `Claude_private.md` is the main file (Aug 2026) — background on why the health-tracking work matters, sourced from material Ward shared directly, not duplicated into any tracked file. Lives at the project root, sibling to `godaddy/`/`homeassistant/`.

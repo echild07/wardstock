@@ -218,11 +218,14 @@ textarea { resize: vertical; }
 .tag-daily { background: #3f6a7a; }
 .tag-therapy { background: #5f4f8a; }
 .tag-cardiac { background: #b03a3a; }
+.tag-medical { background: #3f7a5f; }
 
 .btn-cardiac { background: #b03a3a; }
+.btn-medical { background: #3f7a5f; }
 
 .cat-anxiety:has(input:checked) { background: #7a3f4f; }
 .cat-cardiac:has(input:checked) { background: #b03a3a; }
+.cat-medical:has(input:checked) { background: #3f7a5f; }
 
 .med-change-list { margin: 0 0 10px; padding-left: 18px; color: var(--text); font-size: 0.9rem; }
 .med-change-list li { margin-bottom: 4px; }

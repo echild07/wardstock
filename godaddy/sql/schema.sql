@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS incidents (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    category VARCHAR(10) NOT NULL DEFAULT 'anxiety',   -- anxiety / cardiac
+    category VARCHAR(20) NOT NULL DEFAULT 'anxiety',   -- anxiety / cardiac / medical
     occurred_at DATETIME NOT NULL,                     -- start time
     ended_at DATETIME NULL,                            -- end time
     trigger_context TEXT,
@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS incidents (
     shoulder_sensation VARCHAR(20) DEFAULT 'none',
     headache_sensation VARCHAR(20) DEFAULT 'none',
     shaking VARCHAR(20) DEFAULT 'none',
+    stomach_sensation VARCHAR(20) DEFAULT 'none',       -- medical category (side effects)
+    flu_symptoms_sensation VARCHAR(20) DEFAULT 'none',
+    lethargy_sensation VARCHAR(20) DEFAULT 'none',
     anxiety_intensity TINYINT,                         -- 0-10
     duration_minutes INT,
     nitroglycerin_taken TINYINT(1) NULL,                -- cardiac incidents only
@@ -19,6 +22,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     differed_from_pattern VARCHAR(10) DEFAULT 'unknown', -- yes / no / unknown
     medical_evaluation VARCHAR(10) DEFAULT 'no',          -- yes / no
     medical_evaluation_notes TEXT,
+    related_medication_id INT NULL,                     -- optional, medical category
     free_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -46,6 +50,7 @@ CREATE TABLE IF NOT EXISTS daily_logs (
     mood_rating TINYINT,
     state_of_mind TINYINT NULL,        -- 1=Unpleasant .. 5=Enjoyed
     free_notes TEXT,
+    night_waking_notes TEXT NULL,      -- why Ward woke / what he was thinking, if he woke in the night
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -61,6 +66,20 @@ CREATE TABLE IF NOT EXISTS medications (
     end_date DATE NULL,                                  -- NULL = still active
     sort_order INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Medication dosage-change history (Fulgrim/wherewhen, PLAN.md §11 #8) —
+-- same medicine, different dosage, tracked over time so dosage changes
+-- can be correlated against weight/HRV/sleep/mood/incidents.
+CREATE TABLE IF NOT EXISTS medication_dosage_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    medication_id INT NOT NULL,
+    old_dosage VARCHAR(50) NULL,
+    new_dosage VARCHAR(50) NOT NULL,
+    changed_at DATE NOT NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (medication_id) REFERENCES medications(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO medications (name, dosage, med_type, cadence, frequency_days, start_date, sort_order) VALUES
@@ -113,8 +132,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
     setting_value VARCHAR(255)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '2.2')
-ON DUPLICATE KEY UPDATE setting_value = '2.2';
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.1')
+ON DUPLICATE KEY UPDATE setting_value = '3.1';
 
 CREATE TABLE IF NOT EXISTS app_user (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -147,4 +166,22 @@ CREATE TABLE IF NOT EXISTS system_status_reports (
     expected_frequency_minutes INT NULL,
     reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY category_component (category, component)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- wherewhen's pushed analyses/charts (Fulgrim, PLAN.md §11 "Where results
+-- go"). One flexible table for all ~20 analyses rather than one table
+-- per analysis — result_json holds whatever that analysis's chart page
+-- needs. Versioned so a full recompute (PLAN.md §11 "Schedule &
+-- caching") can land new rows without deleting old ones.
+CREATE TABLE IF NOT EXISTS analysis_results (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    analysis_key VARCHAR(50) NOT NULL,
+    period_type VARCHAR(10) NOT NULL,             -- daily / weekly / monthly / all
+    period_start DATE NULL,
+    period_end DATE NULL,
+    analysis_version INT NOT NULL DEFAULT 1,
+    result_json LONGTEXT NOT NULL,
+    computed_at DATETIME NULL,
+    pushed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY analysis_period_version (analysis_key, period_type, period_start, period_end, analysis_version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

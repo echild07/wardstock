@@ -68,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'mood_rating' => ($_POST['mood_rating'] === '' ? null : (int)$_POST['mood_rating']),
         'state_of_mind' => (($_POST['state_of_mind'] ?? '') === '' ? null : (int)$_POST['state_of_mind']),
         'free_notes' => trim($_POST['free_notes'] ?? ''),
+        'night_waking_notes' => trim($_POST['night_waking_notes'] ?? ''),
     ];
 
     if ($fields['log_date'] === '') {
@@ -159,6 +160,7 @@ $active = 'daily';
         <label>HRV <input type="number" name="hrv" value="<?= val($log, 'hrv') ?>"></label>
         <label>Mood (0–10) <input type="number" min="0" max="10" name="mood_rating" value="<?= val($log, 'mood_rating') ?>"></label>
       </div>
+      <label>Woke in the night? What happened, what were you thinking, why did you wake — <textarea name="night_waking_notes" rows="2"><?= val($log, 'night_waking_notes') ?></textarea></label>
     </fieldset>
 
     <fieldset id="section-weight">

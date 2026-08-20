@@ -34,6 +34,7 @@ $active = 'incidents';
     <div class="topbar-actions">
       <a class="btn" href="incident_form.php?category=anxiety">+ Anxiety</a>
       <a class="btn btn-cardiac" href="incident_form.php?category=cardiac">+ Cardiac</a>
+      <a class="btn btn-medical" href="incident_form.php?category=medical">+ Medical</a>
     </div>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>
@@ -46,11 +47,13 @@ $active = 'incidents';
       <a class="card" href="incident_form.php?id=<?= (int)$inc['id'] ?>">
         <div class="card-top">
           <span class="card-date"><?= htmlspecialchars(date('M j, Y g:i A', strtotime($inc['occurred_at']))) ?></span>
-          <span class="tag <?= $inc['category'] === 'cardiac' ? 'tag-cardiac' : 'tag-incident' ?>"><?= $inc['category'] === 'cardiac' ? 'Cardiac' : 'Anxiety' ?></span>
+          <span class="tag <?= ['cardiac' => 'tag-cardiac', 'medical' => 'tag-medical'][$inc['category']] ?? 'tag-incident' ?>"><?= htmlspecialchars(ucfirst($inc['category'])) ?></span>
         </div>
         <div class="card-tags">
           <?php if ($inc['category'] === 'cardiac'): ?>
             <?php if ($inc['nitroglycerin_taken']): ?><span class="tag lvl-moderate">Nitroglycerin taken</span><?php endif; ?>
+          <?php elseif ($inc['category'] === 'medical'): ?>
+            <?php if ($inc['medical_evaluation'] === 'yes'): ?><span class="badge">Medical evaluation</span><?php endif; ?>
           <?php else: ?>
             <?php if ($inc['anxiety_intensity'] !== null): ?><span class="badge">Intensity <?= (int)$inc['anxiety_intensity'] ?>/10</span><?php endif; ?>
           <?php endif; ?>

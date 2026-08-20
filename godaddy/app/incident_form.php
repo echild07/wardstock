@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $category = ($_POST['category'] ?? 'anxiety') === 'cardiac' ? 'cardiac' : 'anxiety';
+    $category = in_array($_POST['category'] ?? '', ['cardiac', 'medical'], true) ? $_POST['category'] : 'anxiety';
 
     $fields = [
         'category' => $category,
@@ -37,6 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'shoulder_sensation' => $_POST['shoulder_sensation'] ?? 'none',
         'headache_sensation' => $_POST['headache_sensation'] ?? 'none',
         'shaking' => $_POST['shaking'] ?? 'none',
+        'stomach_sensation' => $_POST['stomach_sensation'] ?? 'none',
+        'flu_symptoms_sensation' => $_POST['flu_symptoms_sensation'] ?? 'none',
+        'lethargy_sensation' => $_POST['lethargy_sensation'] ?? 'none',
         'anxiety_intensity' => (($_POST['anxiety_intensity'] ?? '') === '' ? null : (int)$_POST['anxiety_intensity']),
         'duration_minutes' => (($_POST['duration_minutes'] ?? '') === '' ? null : (int)$_POST['duration_minutes']),
         'nitroglycerin_taken' => ($category === 'cardiac' && isset($_POST['nitroglycerin_taken'])) ? 1 : 0,
@@ -44,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'differed_from_pattern' => $_POST['differed_from_pattern'] ?? 'unknown',
         'medical_evaluation' => $_POST['medical_evaluation'] ?? 'no',
         'medical_evaluation_notes' => trim($_POST['medical_evaluation_notes'] ?? ''),
+        'related_medication_id' => (($_POST['related_medication_id'] ?? '') === '' ? null : (int)$_POST['related_medication_id']),
         'free_notes' => trim($_POST['free_notes'] ?? ''),
     ];
 
@@ -75,7 +79,12 @@ $formData = ($error && isset($fields)) ? $fields : $incident;
 function val($row, $key, $default = '') { return $row ? htmlspecialchars($row[$key] ?? $default) : $default; }
 function sel($row, $key, $option) { $cur = $row ? ($row[$key] ?? 'none') : 'none'; return $cur === $option ? 'selected' : ''; }
 
-$categoryVal = $formData ? ($formData['category'] ?? 'anxiety') : (($_GET['category'] ?? 'anxiety') === 'cardiac' ? 'cardiac' : 'anxiety');
+$categoryVal = $formData
+    ? ($formData['category'] ?? 'anxiety')
+    : (in_array($_GET['category'] ?? '', ['cardiac', 'medical'], true) ? $_GET['category'] : 'anxiety');
+
+// Medications list, for the related_medication_id dropdown (medical category only).
+$allMeds = $pdo->query('SELECT id, name, dosage FROM medications ORDER BY sort_order, name')->fetchAll();
 
 // Context date: the day this form is operating on — the incident's own date when
 // editing, or ?date= from the dashboard, or left null so JS fills in local "today".
@@ -172,6 +181,7 @@ $active = 'incidents';
     <span class="hint">Adding another incident for <?= htmlspecialchars(date('M j', strtotime($contextDate))) ?>:</span>
     <a class="btn btn-sm" href="incident_form.php?category=anxiety&date=<?= $contextDate ?>">+ Anxiety</a>
     <a class="btn btn-sm btn-cardiac" href="incident_form.php?category=cardiac&date=<?= $contextDate ?>">+ Cardiac</a>
+    <a class="btn btn-sm btn-medical" href="incident_form.php?category=medical&date=<?= $contextDate ?>">+ Medical</a>
   </div>
 
   <?php if ($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?>
@@ -188,6 +198,10 @@ $active = 'incidents';
           <input type="radio" name="category" value="cardiac" id="cat_cardiac" <?= $categoryVal === 'cardiac' ? 'checked' : '' ?>>
           <span>Cardiac</span>
         </label>
+        <label class="som-option cat-medical">
+          <input type="radio" name="category" value="medical" id="cat_medical" <?= $categoryVal === 'medical' ? 'checked' : '' ?>>
+          <span>Medical</span>
+        </label>
       </div>
     </fieldset>
 
@@ -200,7 +214,7 @@ $active = 'incidents';
       </div>
       <?php if ($overlapWith): ?>
         <p class="notice-warning">⚠ Overlaps in time with <?= count($overlapWith) === 1 ? 'another incident' : count($overlapWith) . ' other incidents' ?> logged this day:
-          <?php foreach ($overlapWith as $i => $o): ?><?= $i > 0 ? ', ' : '' ?><a href="incident_form.php?id=<?= (int)$o['id'] ?>"><?= $o['category'] === 'cardiac' ? 'Cardiac' : 'Anxiety' ?>, <?= htmlspecialchars(date('g:i A', strtotime($o['occurred_at']))) ?><?= $o['ended_at'] ? '–' . htmlspecialchars(date('g:i A', strtotime($o['ended_at']))) : '' ?></a><?php endforeach; ?>
+          <?php foreach ($overlapWith as $i => $o): ?><?= $i > 0 ? ', ' : '' ?><a href="incident_form.php?id=<?= (int)$o['id'] ?>"><?= htmlspecialchars(ucfirst($o['category'])) ?>, <?= htmlspecialchars(date('g:i A', strtotime($o['occurred_at']))) ?><?= $o['ended_at'] ? '–' . htmlspecialchars(date('g:i A', strtotime($o['ended_at']))) : '' ?></a><?php endforeach; ?>
           — not a problem, just worth a look.
         </p>
       <?php endif; ?>
@@ -247,6 +261,23 @@ $active = 'incidents';
       <div class="field-cardiac-only">
         <label class="checkbox-row"><input type="checkbox" name="nitroglycerin_taken" <?= ($formData && !empty($formData['nitroglycerin_taken'])) ? 'checked' : '' ?>> Nitroglycerin taken</label>
       </div>
+      <div class="grid3 field-medical-only">
+        <label>Stomach
+          <select name="stomach_sensation">
+            <?php foreach ($levels as $l): ?><option value="<?= $l ?>" <?= sel($formData, 'stomach_sensation', $l) ?>><?= ucfirst($l) ?></option><?php endforeach; ?>
+          </select>
+        </label>
+        <label>Flu-like symptoms
+          <select name="flu_symptoms_sensation">
+            <?php foreach ($levels as $l): ?><option value="<?= $l ?>" <?= sel($formData, 'flu_symptoms_sensation', $l) ?>><?= ucfirst($l) ?></option><?php endforeach; ?>
+          </select>
+        </label>
+        <label>Lethargy
+          <select name="lethargy_sensation">
+            <?php foreach ($levels as $l): ?><option value="<?= $l ?>" <?= sel($formData, 'lethargy_sensation', $l) ?>><?= ucfirst($l) ?></option><?php endforeach; ?>
+          </select>
+        </label>
+      </div>
     </fieldset>
 
     <fieldset>
@@ -278,6 +309,14 @@ $active = 'incidents';
         </select>
       </label>
       <label>Medical evaluation notes <textarea name="medical_evaluation_notes" rows="2"><?= val($formData, 'medical_evaluation_notes') ?></textarea></label>
+      <label class="field-medical-only">Related medication (optional)
+        <select name="related_medication_id">
+          <option value="">— None / not applicable —</option>
+          <?php foreach ($allMeds as $m): ?>
+            <option value="<?= (int)$m['id'] ?>" <?= ($formData && (int)($formData['related_medication_id'] ?? 0) === (int)$m['id']) ? 'selected' : '' ?>><?= htmlspecialchars($m['name'] . ($m['dosage'] ? ' (' . $m['dosage'] . ')' : '')) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
     </fieldset>
 
     <fieldset>
@@ -303,7 +342,7 @@ $active = 'incidents';
       <?php foreach ($sameDay as $s): ?>
         <tr>
           <td><?= htmlspecialchars(date('g:i A', strtotime($s['occurred_at']))) ?></td>
-          <td><span class="tag <?= $s['category'] === 'cardiac' ? 'tag-cardiac' : 'tag-incident' ?>"><?= $s['category'] === 'cardiac' ? 'Cardiac' : 'Anxiety' ?></span></td>
+          <td><span class="tag <?= ['cardiac' => 'tag-cardiac', 'medical' => 'tag-medical'][$s['category']] ?? 'tag-incident' ?>"><?= ucfirst($s['category']) ?></span></td>
           <td>
             <?php
               $sym = [];
@@ -323,15 +362,20 @@ $active = 'incidents';
 <script>
   function applyCategoryVisibility() {
     var isCardiac = document.getElementById('cat_cardiac').checked;
+    var isMedical = document.getElementById('cat_medical').checked;
     document.querySelectorAll('.field-anxiety-only').forEach(function (el) {
-      el.style.display = isCardiac ? 'none' : '';
+      el.style.display = (isCardiac || isMedical) ? 'none' : '';
     });
     document.querySelectorAll('.field-cardiac-only').forEach(function (el) {
       el.style.display = isCardiac ? '' : 'none';
     });
+    document.querySelectorAll('.field-medical-only').forEach(function (el) {
+      el.style.display = isMedical ? '' : 'none';
+    });
   }
   document.getElementById('cat_anxiety').addEventListener('change', applyCategoryVisibility);
   document.getElementById('cat_cardiac').addEventListener('change', applyCategoryVisibility);
+  document.getElementById('cat_medical').addEventListener('change', applyCategoryVisibility);
   applyCategoryVisibility();
 
   // Upgrade the start-time default to the browser's actual local time on a

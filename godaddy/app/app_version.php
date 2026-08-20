@@ -7,6 +7,10 @@
 //   GoDaddy (this app) + a Home Assistant sync/analytics piece (see
 //   /homeassistant at the project root). Same app, same version scheme,
 //   now under a project-wide codename covering both pieces.
+//   Bumped to 3 ("Fulgrim", from 2 "Lucius") for the wherewhen
+//   correlation-analysis engine — new incident category, medication
+//   dosage history, night-waking capture, ~20 analysis charts, and the
+//   new "Where When" nav section. See homeassistant/PLAN.md §11/§18-20.
 // - APP_VERSION_SQL: bump ONLY when a release actually changes something
 //   in sql/ (a new/changed schema.sql, a new alter_*.sql). Resets CODE
 //   to 0. This is the ONLY number the database needs to know about —
@@ -22,9 +26,9 @@
 // so a code-only release never shows as "out of sync" just because no
 // migration was ever shipped for it to run.
 
-define('APP_VERSION_NAME', 'Lucius');
-define('APP_VERSION_MAJOR', 2);
-define('APP_VERSION_SQL', 2);
-define('APP_VERSION_CODE', 9);
+define('APP_VERSION_NAME', 'Fulgrim');
+define('APP_VERSION_MAJOR', 3);
+define('APP_VERSION_SQL', 1);
+define('APP_VERSION_CODE', 0);
 define('APP_VERSION_SCHEMA', sprintf('%d.%d', APP_VERSION_MAJOR, APP_VERSION_SQL));
 define('APP_VERSION', sprintf('%d.%d.%d', APP_VERSION_MAJOR, APP_VERSION_SQL, APP_VERSION_CODE));

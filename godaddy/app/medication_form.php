@@ -57,13 +57,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("INSERT INTO medications ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
 
-            // If this was a dosage-change flow, close out the prior row the day before this one starts.
+            // If this was a dosage-change flow, close out the prior row the day before this one starts,
+            // and log the change itself into medication_dosage_history (PLAN.md §11 #8) — needed to
+            // correlate dosage changes against weight/HRV/sleep/mood/incidents later.
             $closeId = (int)($_POST['close_previous_id'] ?? 0);
             if ($closeId) {
                 $newStart = new DateTime($fields['start_date']);
                 $newStart->modify('-1 day');
                 $stmt2 = $pdo->prepare('UPDATE medications SET end_date = ? WHERE id = ? AND end_date IS NULL');
                 $stmt2->execute([$newStart->format('Y-m-d'), $closeId]);
+
+                $stmt3 = $pdo->prepare('SELECT dosage FROM medications WHERE id = ?');
+                $stmt3->execute([$closeId]);
+                $prevDosage = $stmt3->fetchColumn();
+
+                $stmt4 = $pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
+                $stmt4->execute([$pdo->lastInsertId(), $prevDosage ?: null, $fields['dosage'], $fields['start_date'], trim($_POST['dosage_change_reason'] ?? '') ?: null]);
             }
         }
         header('Location: medications.php');
@@ -105,11 +114,17 @@ $active = 'medications';
 
   <?php if ($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?>
   <?php if ($copyFrom): ?>
-    <p class="hint">Starting a new dosage for <?= htmlspecialchars($copyFrom['name']) ?>. Saving this will automatically end the previous dosage the day before this one starts.</p>
+    <p class="hint">Starting a new dosage for <?= htmlspecialchars($copyFrom['name']) ?> (was <?= htmlspecialchars($copyFrom['dosage'] ?: 'unset') ?>). Saving this will automatically end the previous dosage the day before this one starts, and log the change for later correlation against weight/HRV/sleep/mood/incidents.</p>
   <?php endif; ?>
 
   <form method="post" class="incident-form">
-    <?php if ($copyFrom): ?><input type="hidden" name="close_previous_id" value="<?= (int)$copyFrom['id'] ?>"><?php endif; ?>
+    <?php if ($copyFrom): ?>
+      <input type="hidden" name="close_previous_id" value="<?= (int)$copyFrom['id'] ?>">
+      <fieldset>
+        <legend>Dosage change</legend>
+        <label>Reason for change (optional) <textarea name="dosage_change_reason" rows="2" placeholder="e.g. doctor increased for ongoing anxiety"></textarea></label>
+      </fieldset>
+    <?php endif; ?>
     <fieldset>
       <legend>Medication</legend>
       <label>Name <input type="text" name="name" value="<?= htmlspecialchars($nameVal) ?>" required></label>
