@@ -12,7 +12,9 @@
     "z": "tab_medical_history_import",
     "name": "Manual trigger",
     "props": [
-      { "p": "payload" }
+      {
+        "p": "payload"
+      }
     ],
     "repeat": "",
     "crontab": "",
@@ -23,7 +25,11 @@
     "payloadType": "date",
     "x": 150,
     "y": 60,
-    "wires": [ [ "n_mhi_read_secrets_file" ] ]
+    "wires": [
+      [
+        "n_mhi_read_secrets_file"
+      ]
+    ]
   },
   {
     "id": "n_mhi_read_secrets_file",
@@ -39,7 +45,11 @@
     "allProps": false,
     "x": 400,
     "y": 60,
-    "wires": [ [ "n_mhi_load_secrets" ] ]
+    "wires": [
+      [
+        "n_mhi_load_secrets"
+      ]
+    ]
   },
   {
     "id": "n_mhi_load_secrets",
@@ -50,7 +60,11 @@
     "outputs": 1,
     "x": 660,
     "y": 60,
-    "wires": [ [ "n_mhi_write_start_http" ] ]
+    "wires": [
+      [
+        "n_mhi_write_start_http"
+      ]
+    ]
   },
   {
     "id": "n_mhi_write_start_http",
@@ -62,7 +76,11 @@
     "url": "",
     "x": 920,
     "y": 60,
-    "wires": [ [ "n_mhi_list_files" ] ]
+    "wires": [
+      [
+        "n_mhi_list_files"
+      ]
+    ]
   },
   {
     "id": "n_mhi_list_files",
@@ -78,7 +96,13 @@
     "name": "List *.yaml in watched folder",
     "x": 200,
     "y": 140,
-    "wires": [ [ "n_mhi_parse_file_list" ], [], [] ]
+    "wires": [
+      [
+        "n_mhi_parse_file_list"
+      ],
+      [],
+      []
+    ]
   },
   {
     "id": "n_mhi_parse_file_list",
@@ -89,7 +113,14 @@
     "outputs": 2,
     "x": 470,
     "y": 140,
-    "wires": [ [ "n_mhi_split_files" ], [ "n_mhi_no_files_success" ] ]
+    "wires": [
+      [
+        "n_mhi_split_files"
+      ],
+      [
+        "n_mhi_no_files_success"
+      ]
+    ]
   },
   {
     "id": "n_mhi_split_files",
@@ -105,7 +136,11 @@
     "property": "files",
     "x": 720,
     "y": 140,
-    "wires": [ [ "n_mhi_read_file" ] ]
+    "wires": [
+      [
+        "n_mhi_read_file"
+      ]
+    ]
   },
   {
     "id": "n_mhi_read_file",
@@ -122,7 +157,11 @@
     "comment": "filenameType 'msg' reads msg.payload as the path — confirm this is still how your Node-RED version's file-in node reads a dynamic filename; several other flows in this project have hit palette-version schema drift on exactly this kind of \"which msg property does the node actually read\" question.",
     "x": 990,
     "y": 140,
-    "wires": [ [ "n_mhi_parse_yaml" ] ]
+    "wires": [
+      [
+        "n_mhi_parse_yaml"
+      ]
+    ]
   },
   {
     "id": "n_mhi_parse_yaml",
@@ -132,7 +171,11 @@
     "property": "payload",
     "x": 1230,
     "y": 140,
-    "wires": [ [ "n_mhi_extract_encounters" ] ]
+    "wires": [
+      [
+        "n_mhi_extract_encounters"
+      ]
+    ]
   },
   {
     "id": "n_mhi_extract_encounters",
@@ -143,7 +186,11 @@
     "outputs": 1,
     "x": 1480,
     "y": 140,
-    "wires": [ [ "n_mhi_join_files" ] ]
+    "wires": [
+      [
+        "n_mhi_join_files"
+      ]
+    ]
   },
   {
     "id": "n_mhi_join_files",
@@ -164,7 +211,11 @@
     "comment": "Paired with n_mhi_split_files via msg.parts (mode: auto). Output is an array of arrays (one encounters[] array per file) — flattened by the next node, not itself.",
     "x": 300,
     "y": 220,
-    "wires": [ [ "n_mhi_flatten_encounters" ] ]
+    "wires": [
+      [
+        "n_mhi_flatten_encounters"
+      ]
+    ]
   },
   {
     "id": "n_mhi_flatten_encounters",
@@ -175,7 +226,14 @@
     "outputs": 2,
     "x": 560,
     "y": 220,
-    "wires": [ [ "n_mhi_split_encounters" ], [ "n_mhi_tally" ] ]
+    "wires": [
+      [
+        "n_mhi_split_encounters"
+      ],
+      [
+        "n_mhi_tally"
+      ]
+    ]
   },
   {
     "id": "n_mhi_split_encounters",
@@ -191,7 +249,11 @@
     "property": "encounters",
     "x": 820,
     "y": 220,
-    "wires": [ [ "n_mhi_prep_push" ] ]
+    "wires": [
+      [
+        "n_mhi_prep_push"
+      ]
+    ]
   },
   {
     "id": "n_mhi_prep_push",
@@ -202,7 +264,11 @@
     "outputs": 1,
     "x": 1070,
     "y": 220,
-    "wires": [ [ "n_mhi_push_http" ] ]
+    "wires": [
+      [
+        "n_mhi_push_http"
+      ]
+    ]
   },
   {
     "id": "n_mhi_push_http",
@@ -214,7 +280,11 @@
     "url": "",
     "x": 1330,
     "y": 220,
-    "wires": [ [ "n_mhi_join_encounters" ] ]
+    "wires": [
+      [
+        "n_mhi_join_encounters"
+      ]
+    ]
   },
   {
     "id": "n_mhi_join_encounters",
@@ -235,7 +305,11 @@
     "comment": "Paired with n_mhi_split_encounters via msg.parts (mode: auto). Sequential, not nested, relative to the files split/join above — that pair fully resolves before this one begins.",
     "x": 300,
     "y": 300,
-    "wires": [ [ "n_mhi_tally" ] ]
+    "wires": [
+      [
+        "n_mhi_tally"
+      ]
+    ]
   },
   {
     "id": "n_mhi_tally",
@@ -246,7 +320,14 @@
     "outputs": 2,
     "x": 560,
     "y": 300,
-    "wires": [ [ "n_mhi_move_processed" ], [ "n_mhi_job_success" ] ]
+    "wires": [
+      [
+        "n_mhi_move_processed"
+      ],
+      [
+        "n_mhi_job_success"
+      ]
+    ]
   },
   {
     "id": "n_mhi_move_processed",
@@ -262,7 +343,15 @@
     "name": "Move processed files (msg.payload = full shell command)",
     "x": 820,
     "y": 300,
-    "wires": [ [ "n_mhi_job_success" ], [ "n_mhi_job_success" ], [] ]
+    "wires": [
+      [
+        "n_mhi_job_success"
+      ],
+      [
+        "n_mhi_job_success"
+      ],
+      []
+    ]
   },
   {
     "id": "n_mhi_no_files_success",
@@ -273,18 +362,27 @@
     "outputs": 1,
     "x": 720,
     "y": 100,
-    "wires": [ [ "n_mhi_job_success" ] ]
+    "wires": [
+      [
+        "n_mhi_job_success"
+      ]
+    ]
   },
   {
     "id": "n_mhi_job_success",
     "type": "function",
     "z": "tab_medical_history_import",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=success inserted=' + (msg.encounter_inserted||0) + ',updated=' + (msg.encounter_updated||0) + ',failed=' + (msg.encounter_failed||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_mhi_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_mhi_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_mhi_last_attempt', value: new Date().toISOString() }\n];\nif (!msg.secrets) msg.secrets = flow.get('mhi_secrets');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=success inserted=' + (msg.encounter_inserted||0) + ',updated=' + (msg.encounter_updated||0) + ',failed=' + (msg.encounter_failed||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'medical_history_import', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nif (!msg.secrets) msg.secrets = flow.get('mhi_secrets');\nreturn msg;",
     "outputs": 1,
     "x": 700,
     "y": 400,
-    "wires": [ [ "n_mhi_final_influx_write", "n_mhi_set_ha_entities" ] ]
+    "wires": [
+      [
+        "n_mhi_final_influx_write",
+        "n_mhi_sqlite_ensure_table"
+      ]
+    ]
   },
   {
     "id": "n_mhi_final_influx_write",
@@ -295,7 +393,11 @@
     "outputs": 1,
     "x": 960,
     "y": 400,
-    "wires": [ [ "n_mhi_final_influx_http" ] ]
+    "wires": [
+      [
+        "n_mhi_final_influx_http"
+      ]
+    ]
   },
   {
     "id": "n_mhi_final_influx_http",
@@ -307,46 +409,9 @@
     "url": "",
     "x": 1210,
     "y": 400,
-    "wires": [ [] ]
-  },
-  {
-    "id": "n_mhi_set_ha_entities",
-    "type": "function",
-    "z": "tab_medical_history_import",
-    "name": "Split entities for HA WebSocket node",
-    "func": "// Same buildServiceCall pattern as oura_sync_flow.json's equivalent node\n// — see that file's comment for the full explanation of why this shape\n// (msg.payload = {action, target, data}, not the older domain/service/\n// target msg properties).\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 700,
-    "y": 460,
-    "wires": [ [ "n_mhi_ha_set_state" ] ]
-  },
-  {
-    "id": "n_mhi_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_medical_history_import",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same node config as every other flow's equivalent — msg.payload carries {action, target, data} directly, UI Action/Targets/Data can stay blank. The one thing that must be set manually per install: the 'Server' field.",
-    "x": 500,
-    "y": 460,
-    "wires": [ [] ]
+    "wires": [
+      []
+    ]
   },
   {
     "id": "n_mhi_catch",
@@ -358,17 +423,94 @@
     "comment": "Fixes the gap flagged in PLAN.md §20's 'Known gap' note — this flow previously only handled its success path. Unlike body_comp_import_flow.json's exceljs-based job_failed (which wires from that node type's own native error output), nothing in this flow has a native error output — the `yaml` node and every `function` node here are single-output — so a real failure (malformed YAML, a bad file) needs a `catch` node to be caught at all. Scope null = catches any node on this tab, including node.error() calls like Load secrets' own JSON.parse failure.",
     "x": 300,
     "y": 560,
-    "wires": [ [ "n_mhi_job_failed" ] ]
+    "wires": [
+      [
+        "n_mhi_job_failed"
+      ]
+    ]
   },
   {
     "id": "n_mhi_job_failed",
     "type": "function",
     "z": "tab_medical_history_import",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('mhi_secrets');\nmsg.job_started_at = flow.get('mhi_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_mhi_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_mhi_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_mhi_last_error', value: (source + ': ' + detail).slice(0, 250) }\n];\nnode.warn('Medical History Import failed: ' + source + ': ' + detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('mhi_secrets');\nmsg.job_started_at = flow.get('mhi_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'medical_history_import', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('Medical History Import failed: ' + source + ': ' + detail);\nreturn msg;",
     "outputs": 1,
     "x": 560,
     "y": 560,
-    "wires": [ [ "n_mhi_final_influx_write", "n_mhi_set_ha_entities" ] ]
+    "wires": [
+      [
+        "n_mhi_final_influx_write",
+        "n_mhi_sqlite_ensure_table"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_medical_history_import",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 700,
+    "y": 460,
+    "wires": [
+      [
+        "n_mhi_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_medical_history_import",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 940,
+    "y": 460,
+    "wires": [
+      [
+        "n_mhi_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_medical_history_import",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 700,
+    "y": 520,
+    "wires": [
+      [
+        "n_mhi_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_medical_history_import",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 940,
+    "y": 520,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   }
 ]

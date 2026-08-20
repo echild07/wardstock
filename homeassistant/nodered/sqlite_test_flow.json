@@ -1,0 +1,361 @@
+[
+  {
+    "id": "tab_sqlite_test",
+    "type": "tab",
+    "label": "SQLite - Test & Validate",
+    "disabled": false,
+    "info": "Validates assumptions before any real SQLite migration gets built (Ward, Aug 2026) — same discipline this project has used for every new node type (officedocs, core yaml, the HA websocket palette): guess from documentation, build a throwaway test flow, run it against the real target, fix what's actually wrong.\n\nTWO THINGS ASSUMED HERE, NOT CONFIRMED:\n1. Node type. This flow uses node type \"sqlite\" backed by a \"sqlitedb\" config node — the shape of the official node-red-node-sqlite package. If your installed package is different, Node-RED will show these nodes as unrecognized/dashed on import and refuse to deploy — that's the signal, not a bug. Tell me the actual node type shown in Manage Palette and I'll rebuild against it.\n2. Query/result shape. node-red-node-sqlite's own convention (moderate confidence, not verified against a real response): msg.topic carries the SQL text, msg.params carries bind parameters, results come back on msg.payload as an array of row objects for a SELECT. This flow logs the RAW payload at every step rather than asserting a shape, specifically because that shape is the thing being validated, not something to assume correct going in.\n\nTWO SEPARATE PARTS, run independently via their own inject nodes:\n- Part A (top): a throwaway scratch table in a brand-new file (/share/lucius_sqlite_test.db, auto-created, zero risk to anything real) — proves the node type/package works at all: CREATE TABLE IF NOT EXISTS, INSERT, SELECT, DROP TABLE cleanup.\n- Part B (bottom): a READ-ONLY check against what we're assuming is the same database the SQLite Web add-on already points at — the config node below has a CHANGE_ME placeholder path that needs replacing with the real one first (check the SQLite Web add-on's own Configuration tab in HA Settings → Add-ons, or its logs on startup, for the file it opened). Only runs `SELECT name FROM sqlite_master WHERE type='table'` — lists existing tables, changes nothing, so it's safe to point at the real file and just look.\n\nOnce both parts confirm real behavior, the actual status-tracking schema (job_name, last_success, last_attempt, last_attempt_ok, last_error) gets built as its own idempotent \"ensure schema\" flow — same CREATE TABLE IF NOT EXISTS pattern Part A already exercises here, mirroring godaddy/sql/upgrade_from_3.0.0.sql's own safe-to-rerun convention — run once by hand or at the start of every status-writing flow, not something requiring manual table creation in SQLite Web first.\n\n- Part C (added after Part A/B first showed \"unknown node type\" — no SQLite Node-RED palette is installed): checks whether the `sqlite3` CLI binary is already present in the Node-RED add-on's own container via the core `exec` node, same one already proven working for file listing/moving in Body Comp Import/Medical History Import/both wherewhen flows — no new dependency needed just to run this check. If it's there, the real flows can shell out to it directly instead of needing any npm SQLite package at all, which matters here specifically because SQLite's native-binding Node-RED packages have a real history of failing to build on Alpine/musl-based containers (what the HA Node-RED add-on runs on) — sidestepping that risk entirely beats guessing at which palette might install cleanly."
+  },
+  {
+    "id": "cfg_sqlite_scratch",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Scratch test DB (throwaway)",
+    "db": "/share/lucius_sqlite_test.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "cfg_sqlite_realdb",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "SQLite Web's real DB (READ-ONLY CHECK)",
+    "db": "/share/CHANGE_ME_sqlite_web_db_path.db",
+    "mode": "READONLY"
+  },
+  {
+    "id": "n_sqt_trigger_a",
+    "type": "inject",
+    "z": "tab_sqlite_test",
+    "name": "A: Click to test scratch DB",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 80,
+    "wires": [
+      [
+        "n_sqt_a_create"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_create",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Prep: CREATE TABLE IF NOT EXISTS",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS _claude_sqlite_test (\" +\n    \"id INTEGER PRIMARY KEY AUTOINCREMENT, job_name TEXT NOT NULL, checked_at TEXT NOT NULL)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 80,
+    "wires": [
+      [
+        "n_sqt_a_create_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_create_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: CREATE TABLE",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 80,
+    "wires": [
+      [
+        "n_sqt_a_log1"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_log1",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Log raw result 1 (CREATE)",
+    "func": "node.warn('CREATE result: ' + JSON.stringify(msg.payload));\nmsg.topic = \"INSERT INTO _claude_sqlite_test (job_name, checked_at) VALUES ('sqlite_test_probe', datetime('now'))\";\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 140,
+    "wires": [
+      [
+        "n_sqt_a_insert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_insert_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: INSERT",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 140,
+    "wires": [
+      [
+        "n_sqt_a_log2"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_log2",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Log raw result 2 (INSERT)",
+    "func": "node.warn('INSERT result: ' + JSON.stringify(msg.payload));\nmsg.topic = 'SELECT * FROM _claude_sqlite_test ORDER BY id DESC LIMIT 5';\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 200,
+    "wires": [
+      [
+        "n_sqt_a_select_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_select_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: SELECT",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 200,
+    "wires": [
+      [
+        "n_sqt_a_check"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_check",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Check + prep cleanup",
+    "func": "const problems = [];\nconst rows = msg.payload;\nnode.warn('SELECT result: ' + JSON.stringify(rows));\nif (!Array.isArray(rows)) {\n    problems.push('Expected msg.payload to be an array of row objects for a SELECT — got ' + typeof rows + '. This is exactly the assumption this test exists to check; if wrong, tell me the real shape from the RESULT debug output and the query/result handling in the real flows gets built against that instead.');\n} else if (rows.length === 0) {\n    problems.push('SELECT returned zero rows right after an INSERT into the same table — either the INSERT silently failed, or results need to be read a different way than msg.payload.');\n} else {\n    const first = rows[0];\n    if (!('job_name' in first) || !('checked_at' in first)) {\n        problems.push('Row object does not have the expected column keys — got keys: ' + Object.keys(first).join(', '));\n    }\n}\nmsg.test_problems = problems;\nmsg.topic = 'DROP TABLE IF EXISTS _claude_sqlite_test';\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 260,
+    "wires": [
+      [
+        "n_sqt_a_cleanup_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_cleanup_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: DROP TABLE (cleanup)",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 260,
+    "wires": [
+      [
+        "n_sqt_a_report"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_report",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Build Part A report",
+    "func": "node.warn('DROP TABLE (cleanup) result: ' + JSON.stringify(msg.payload));\nconst problems = msg.test_problems || [];\nmsg.payload = {\n    part: 'A - scratch DB round-trip (CREATE/INSERT/SELECT/DROP)',\n    result: problems.length ? 'PROBLEMS FOUND' : 'ALL CHECKS PASSED — node type + query/result shape confirmed',\n    problems: problems,\n};\nreturn [msg, problems.length ? msg : null];",
+    "outputs": 2,
+    "x": 940,
+    "y": 260,
+    "wires": [
+      [
+        "n_sqt_debug_result"
+      ],
+      [
+        "n_sqt_debug_problems"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_trigger_b",
+    "type": "inject",
+    "z": "tab_sqlite_test",
+    "name": "B: Click to check REAL db (read-only)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 200,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_b_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_b_prep",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Prep: list existing tables",
+    "func": "msg.topic = \"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\";\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_b_query_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_b_query_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: list tables (real db)",
+    "mydb": "cfg_sqlite_realdb",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 720,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_b_report"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_b_report",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Build Part B report",
+    "func": "node.warn('Real-DB table list: ' + JSON.stringify(msg.payload));\nmsg.payload = {\n    part: 'B - real SQLite Web database, read-only reachability check',\n    result: 'Reached the file and ran a query — see existing_tables for what is actually in there.',\n    existing_tables: msg.payload,\n    note: 'If this errored instead of returning, the CFG_REAL config node\\'s db path is still the CHANGE_ME placeholder, or is pointed at the wrong file — fix that field and retry before trusting anything else here.',\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 960,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_debug_result"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_trigger_c",
+    "type": "inject",
+    "z": "tab_sqlite_test",
+    "name": "C: Click to check for sqlite3 CLI",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 480,
+    "wires": [
+      [
+        "n_sqt_c_exec"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_c_exec",
+    "type": "exec",
+    "z": "tab_sqlite_test",
+    "command": "sh -c \"command -v sqlite3 && sqlite3 --version || echo NOT_FOUND\"",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "10",
+    "winHide": false,
+    "oldrc": false,
+    "name": "Check for sqlite3 CLI on PATH",
+    "x": 460,
+    "y": 480,
+    "wires": [
+      [
+        "n_sqt_c_report"
+      ],
+      [
+        "n_sqt_c_report"
+      ],
+      []
+    ]
+  },
+  {
+    "id": "n_sqt_c_report",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Build Part C report",
+    "func": "const out = (msg.payload || '').toString().trim();\nconst found = out && !out.includes('NOT_FOUND');\nnode.warn('sqlite3 CLI check raw output: ' + JSON.stringify(out));\nmsg.payload = {\n    part: 'C - sqlite3 CLI availability in the Node-RED container',\n    result: found ? 'FOUND — exec+CLI is a viable path, no npm palette needed' : 'NOT FOUND — either install a SQLite palette (watch for a native-build failure on Alpine) or add sqlite3 to the container another way',\n    raw_output: out,\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 720,
+    "y": 480,
+    "wires": [
+      [
+        "n_sqt_debug_result"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_debug_result",
+    "type": "debug",
+    "z": "tab_sqlite_test",
+    "name": "RESULT",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1180,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "n_sqt_debug_problems",
+    "type": "debug",
+    "z": "tab_sqlite_test",
+    "name": "PROBLEMS FOUND (also fires node status)",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload.problems",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1180,
+    "y": 320,
+    "wires": []
+  }
+]

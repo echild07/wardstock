@@ -332,14 +332,14 @@
     "type": "function",
     "z": "tab_analysis_engine",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(flow.get('ae_job_started_at') || Date.now()).getTime();\nmsg.secrets = flow.get('ae_secrets');\nmsg.job_started_at = flow.get('ae_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=analysis_engine,period_type=' + flow.get('ae_period_type') + ',status=success analyses_completed=' + (msg.analyses_completed || 0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_analysis_engine_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_analysis_engine_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_analysis_engine_last_attempt', value: new Date().toISOString() }\n];\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(flow.get('ae_job_started_at') || Date.now()).getTime();\nmsg.secrets = flow.get('ae_secrets');\nmsg.job_started_at = flow.get('ae_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=analysis_engine,period_type=' + flow.get('ae_period_type') + ',status=success analyses_completed=' + (msg.analyses_completed || 0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'analysis_engine', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nreturn msg;",
     "outputs": 1,
     "x": 500,
     "y": 700,
     "wires": [
       [
         "n_ae_final_influx_write",
-        "n_ae_set_ha_entities"
+        "n_ae_sqlite_ensure_table"
       ]
     ]
   },
@@ -364,14 +364,14 @@
     "type": "function",
     "z": "tab_analysis_engine",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('ae_secrets');\nmsg.job_started_at = flow.get('ae_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=analysis_engine,period_type=' + (flow.get('ae_period_type') || 'unknown') + ',status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_analysis_engine_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_analysis_engine_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_analysis_engine_last_error', value: (source + ': ' + detail).slice(0, 250) }\n];\nnode.warn('Analysis Engine failed: ' + source + ': ' + detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('ae_secrets');\nmsg.job_started_at = flow.get('ae_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=analysis_engine,period_type=' + (flow.get('ae_period_type') || 'unknown') + ',status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'analysis_engine', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('Analysis Engine failed: ' + source + ': ' + detail);\nreturn msg;",
     "outputs": 1,
     "x": 500,
     "y": 780,
     "wires": [
       [
         "n_ae_final_influx_write",
-        "n_ae_set_ha_entities"
+        "n_ae_sqlite_ensure_table"
       ]
     ]
   },
@@ -405,49 +405,72 @@
     ]
   },
   {
-    "id": "n_ae_set_ha_entities",
+    "id": "n_ae_sqlite_ensure_table",
     "type": "function",
     "z": "tab_analysis_engine",
-    "name": "Split entities for HA WebSocket node",
-    "func": "// Verbatim from body_comp_import_flow.json's equivalent node — setting a helper entity is a\n// service call (msg.payload = {action, target, data}), not a direct state write; see\n// godaddy_pull_flow.json's equivalent node for the full original explanation.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
     "outputs": 1,
     "x": 730,
     "y": 820,
     "wires": [
       [
-        "n_ae_ha_set_state"
+        "n_ae_sqlite_ensure_table_db"
       ]
     ]
   },
   {
-    "id": "n_ae_ha_set_state",
-    "type": "api-call-service",
+    "id": "n_ae_sqlite_ensure_table_db",
+    "type": "sqlite",
     "z": "tab_analysis_engine",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same node config as every other flow's equivalent — msg.payload carries {action, target, data} directly, UI Action/Targets/Data can stay blank. Must set the 'Server' field manually per install.",
-    "x": 960,
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 970,
     "y": 820,
+    "wires": [
+      [
+        "n_ae_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_ae_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_analysis_engine",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 880,
+    "wires": [
+      [
+        "n_ae_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_ae_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_analysis_engine",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 970,
+    "y": 880,
     "wires": [
       []
     ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_analysis_engine_test",
@@ -938,14 +961,14 @@
     "type": "function",
     "z": "tab_bodycomp_import",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=bodycomp_import,status=success record_count=' + (msg.record_count||0) + ',weight_pushes_written=' + (msg.weight_pushes_written||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_bodycomp_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_bodycomp_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_bodycomp_last_attempt', value: new Date().toISOString() }\n];\nif (!msg.secrets) msg.secrets = flow.get('bci_secrets');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=bodycomp_import,status=success record_count=' + (msg.record_count||0) + ',weight_pushes_written=' + (msg.weight_pushes_written||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'bodycomp_import', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nif (!msg.secrets) msg.secrets = flow.get('bci_secrets');\nreturn msg;",
     "outputs": 1,
     "x": 700,
     "y": 500,
     "wires": [
       [
         "n_bci_final_influx_write",
-        "n_bci_set_ha_entities"
+        "n_bci_sqlite_ensure_table"
       ]
     ]
   },
@@ -954,14 +977,14 @@
     "type": "function",
     "z": "tab_bodycomp_import",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = (node.error ? 'exceljs read/readRange failed' : 'unknown').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('bci_secrets');\nmsg.job_started_at = flow.get('bci_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=bodycomp_import,status=failed,failure_code=xlsx_parse_error detail=\"' + detail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_bodycomp_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_bodycomp_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_bodycomp_last_error', value: 'xlsx_parse_error: could not read/parse an .xlsx file in the watched folder' }\n];\nnode.warn('Body Composition Import failed: could not read/parse an xlsx file');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = (node.error ? 'exceljs read/readRange failed' : 'unknown').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('bci_secrets');\nmsg.job_started_at = flow.get('bci_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=bodycomp_import,status=failed,failure_code=xlsx_parse_error detail=\"' + detail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'bodycomp_import', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: 'xlsx_parse_error: could not read/parse an .xlsx file in the watched folder' };\nnode.warn('Body Composition Import failed: could not read/parse an xlsx file');\nreturn msg;",
     "outputs": 1,
     "x": 1180,
     "y": 500,
     "wires": [
       [
         "n_bci_final_influx_write",
-        "n_bci_set_ha_entities"
+        "n_bci_sqlite_ensure_table"
       ]
     ]
   },
@@ -995,49 +1018,72 @@
     ]
   },
   {
-    "id": "n_bci_set_ha_entities",
+    "id": "n_bci_sqlite_ensure_table",
     "type": "function",
     "z": "tab_bodycomp_import",
-    "name": "Split entities for HA WebSocket node",
-    "func": "// Same fix as the other two flows — setting a helper entity is a\n// service call, not a direct state write. See godaddy_pull_flow.json's\n// equivalent node for the full explanation.\n//\n// FIX (Aug 2026): same schema fix as the other two flows — the newer\n// \"action\" node reads everything from msg.payload = { action, target,\n// data } instead of separate top-level domain/service/target/payload\n// properties. See the Oura Sync flow's equivalent comment for the full\n// explanation and the doc link.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
     "outputs": 1,
     "x": 460,
     "y": 620,
     "wires": [
       [
-        "n_bci_ha_set_state"
+        "n_bci_sqlite_ensure_table_db"
       ]
     ]
   },
   {
-    "id": "n_bci_ha_set_state",
-    "type": "api-call-service",
+    "id": "n_bci_sqlite_ensure_table_db",
+    "type": "sqlite",
     "z": "tab_bodycomp_import",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same fix as the other two flows' equivalent node — stale domain/service/target/data properties below are leftover from an older node schema and unused now; the preceding function sends msg.payload = { action, target, data } instead, which the newer \"action\" node reads directly and which overrides this node's UI config regardless. Fine to leave Action/Targets/Data blank in the editor. Still MUST set manually per install: the 'Server' field.",
-    "x": 220,
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
     "y": 620,
+    "wires": [
+      [
+        "n_bci_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_bci_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_bodycomp_import",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 680,
+    "wires": [
+      [
+        "n_bci_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_bci_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_bodycomp_import",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 680,
     "wires": [
       []
     ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_bodycomp_test",
@@ -1349,14 +1395,14 @@
     "type": "function",
     "z": "tab_godaddy_pull",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_pull,status=success record_count=' + (msg.record_count||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_godaddy_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_godaddy_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_godaddy_last_attempt', value: new Date().toISOString() }\n];\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_pull,status=success record_count=' + (msg.record_count||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'godaddy_pull', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nreturn msg;",
     "outputs": 1,
     "x": 900,
     "y": 260,
     "wires": [
       [
         "n_gd_final_influx_write",
-        "n_gd_set_ha_entities"
+        "n_gd_sqlite_ensure_table"
       ]
     ]
   },
@@ -1365,14 +1411,14 @@
     "type": "function",
     "z": "tab_godaddy_pull",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_pull,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_godaddy_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_godaddy_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_godaddy_last_error', value: code + ': ' + (msg.failure_detail || '') }\n];\nnode.warn('GoDaddy pull failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_pull,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'godaddy_pull', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: code + ': ' + (msg.failure_detail || '') };\nnode.warn('GoDaddy pull failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
     "outputs": 1,
     "x": 400,
     "y": 260,
     "wires": [
       [
         "n_gd_final_influx_write",
-        "n_gd_set_ha_entities"
+        "n_gd_sqlite_ensure_table"
       ]
     ]
   },
@@ -1401,51 +1447,6 @@
     "url": "",
     "x": 900,
     "y": 320,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "n_gd_set_ha_entities",
-    "type": "function",
-    "z": "tab_godaddy_pull",
-    "name": "Split entities for HA WebSocket node",
-    "func": "// Same fix as the Oura Sync flow — see its \"Split entities for HA\n// WebSocket node\" comment for the full explanation. Builds proper\n// service-call objects (domain/service/target/data) instead of raw\n// entity_id/value pairs, since setting a helper entity is a service\n// call, not a direct state write. Feeds an api-call-service (\"action\")\n// node now, not the deprecated ha-entity node.\n//\n// FIX (Aug 2026): same schema fix as the Oura Sync flow — the newer\n// \"action\" node reads everything from msg.payload = { action, target,\n// data } instead of separate top-level domain/service/target/payload\n// properties. See the Oura Sync flow's equivalent comment for the full\n// explanation and the doc link.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 400,
-    "y": 380,
-    "wires": [
-      [
-        "n_gd_ha_set_state"
-      ]
-    ]
-  },
-  {
-    "id": "n_gd_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_godaddy_pull",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same fix as the Oura Sync flow's equivalent node — stale domain/service/target/data properties below are leftover from an older node schema and unused now; the preceding function sends msg.payload = { action, target, data } instead, which the newer \"action\" node reads directly and which overrides this node's UI config regardless. Fine to leave Action/Targets/Data blank in the editor. Still MUST set manually per install: the 'Server' field.",
-    "x": 200,
-    "y": 440,
     "wires": [
       []
     ]
@@ -1488,6 +1489,74 @@
         "n_gd_job_success"
       ]
     ]
+  },
+  {
+    "id": "n_gd_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 380,
+    "wires": [
+      [
+        "n_gd_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_pull",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 640,
+    "y": 380,
+    "wires": [
+      [
+        "n_gd_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_godaddy_pull",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 440,
+    "wires": [
+      [
+        "n_gd_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gd_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_pull",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 640,
+    "y": 440,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_medical_history_import",
@@ -1863,14 +1932,14 @@
     "type": "function",
     "z": "tab_medical_history_import",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=success inserted=' + (msg.encounter_inserted||0) + ',updated=' + (msg.encounter_updated||0) + ',failed=' + (msg.encounter_failed||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_mhi_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_mhi_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_mhi_last_attempt', value: new Date().toISOString() }\n];\nif (!msg.secrets) msg.secrets = flow.get('mhi_secrets');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=success inserted=' + (msg.encounter_inserted||0) + ',updated=' + (msg.encounter_updated||0) + ',failed=' + (msg.encounter_failed||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'medical_history_import', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nif (!msg.secrets) msg.secrets = flow.get('mhi_secrets');\nreturn msg;",
     "outputs": 1,
     "x": 700,
     "y": 400,
     "wires": [
       [
         "n_mhi_final_influx_write",
-        "n_mhi_set_ha_entities"
+        "n_mhi_sqlite_ensure_table"
       ]
     ]
   },
@@ -1904,51 +1973,6 @@
     ]
   },
   {
-    "id": "n_mhi_set_ha_entities",
-    "type": "function",
-    "z": "tab_medical_history_import",
-    "name": "Split entities for HA WebSocket node",
-    "func": "// Same buildServiceCall pattern as oura_sync_flow.json's equivalent node\n// — see that file's comment for the full explanation of why this shape\n// (msg.payload = {action, target, data}, not the older domain/service/\n// target msg properties).\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 700,
-    "y": 460,
-    "wires": [
-      [
-        "n_mhi_ha_set_state"
-      ]
-    ]
-  },
-  {
-    "id": "n_mhi_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_medical_history_import",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same node config as every other flow's equivalent — msg.payload carries {action, target, data} directly, UI Action/Targets/Data can stay blank. The one thing that must be set manually per install: the 'Server' field.",
-    "x": 500,
-    "y": 460,
-    "wires": [
-      []
-    ]
-  },
-  {
     "id": "n_mhi_catch",
     "type": "catch",
     "z": "tab_medical_history_import",
@@ -1969,16 +1993,84 @@
     "type": "function",
     "z": "tab_medical_history_import",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('mhi_secrets');\nmsg.job_started_at = flow.get('mhi_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_mhi_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_mhi_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_mhi_last_error', value: (source + ': ' + detail).slice(0, 250) }\n];\nnode.warn('Medical History Import failed: ' + source + ': ' + detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('mhi_secrets');\nmsg.job_started_at = flow.get('mhi_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=medical_history_import,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'medical_history_import', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('Medical History Import failed: ' + source + ': ' + detail);\nreturn msg;",
     "outputs": 1,
     "x": 560,
     "y": 560,
     "wires": [
       [
         "n_mhi_final_influx_write",
-        "n_mhi_set_ha_entities"
+        "n_mhi_sqlite_ensure_table"
       ]
     ]
+  },
+  {
+    "id": "n_mhi_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_medical_history_import",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 700,
+    "y": 460,
+    "wires": [
+      [
+        "n_mhi_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_medical_history_import",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 940,
+    "y": 460,
+    "wires": [
+      [
+        "n_mhi_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_medical_history_import",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 700,
+    "y": 520,
+    "wires": [
+      [
+        "n_mhi_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_mhi_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_medical_history_import",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 940,
+    "y": 520,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_mhi_test",
@@ -2809,37 +2901,7 @@
     "y": 80,
     "wires": [
       [
-        "n_oura_read_last_data_date"
-      ]
-    ]
-  },
-  {
-    "id": "n_oura_read_last_data_date",
-    "type": "api-current-state",
-    "z": "tab_oura_sync",
-    "name": "Read lucius_oura_last_data_date",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "halt_if": "",
-    "halt_if_type": "str",
-    "halt_if_compare": "is",
-    "entity_id": "input_datetime.lucius_oura_last_data_date",
-    "state_type": "str",
-    "state_location": "oura_last_data_date",
-    "override_topic": false,
-    "state_type_write": "msg",
-    "state_location_write": "oura_last_data_date",
-    "override_topic_write": false,
-    "override_payload": "msg",
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "Self-heal fix (PLAN.md §1 TODO, Aug 2026): reads the last date real Oura data was confirmed synced, so the fetch window (below, n_oura_fetch_sleep) can extend back further than the usual 'yesterday' when a run was missed. Same api-current-state pattern as status_heartbeat_flow.json's helper reads — outputProperties/state_location fields vary by palette version, confirm this writes to msg.oura_last_data_date in the editor after import. Unset on first run (new helper, no default) — msg.oura_last_data_date will be empty/unavailable, and the next node falls back to the original 'yesterday' behavior in that case.",
-    "x": 500,
-    "y": 80,
-    "wires": [
-      [
-        "n_oura_fetch_shared_config_prep"
+        "n_oura_checkpoint_ensure_table"
       ]
     ]
   },
@@ -3532,14 +3594,14 @@
     "type": "function",
     "z": "tab_oura_sync",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_sync,status=success duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_oura_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_oura_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_oura_last_attempt', value: new Date().toISOString() },\n    // Self-heal fix (PLAN.md §1 TODO, Aug 2026): advance the checkpoint to\n    // today on every successful run. Normal case: this just moves it\n    // forward one day at a time, same as the old hardcoded 'yesterday'\n    // window effectively did. After a gap: this run's window (computed in\n    // n_oura_fetch_sleep from the OLD, stale value of this same helper)\n    // already reached back to close it, so it's now safe to advance all\n    // the way to today rather than only one day at a time. Stored as a\n    // full datetime (noon-anchored, avoids timezone-boundary ambiguity —\n    // same convention as the medications InfluxDB write elsewhere in this\n    // project) rather than a bare date, so this helper is the same SHAPE\n    // as every other input_datetime helper here and reuses the same\n    // proven set_datetime service-call path in n_oura_set_ha_entities\n    // below, rather than introducing a first-ever date-only helper with\n    // its own untested data: {date: ...} code path.\n    { entity_id: 'input_datetime.lucius_oura_last_data_date', value: msg.target_date + 'T12:00:00' }\n];\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_sync,status=success duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = {\n    job_name: 'oura_sync', mode: 'success',\n    last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1,\n    // Self-heal checkpoint (PLAN.md §1 TODO) — moved here from its own HA\n    // helper (input_datetime.lucius_oura_last_data_date). Advances to today\n    // on every successful run, same semantics as before.\n    checkpoint: msg.target_date,\n};\nreturn msg;",
     "outputs": 1,
     "x": 650,
     "y": 460,
     "wires": [
       [
         "n_oura_final_influx_write",
-        "n_oura_set_ha_entities"
+        "n_oura_sqlite_ensure_table"
       ]
     ]
   },
@@ -3548,14 +3610,14 @@
     "type": "function",
     "z": "tab_oura_sync",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_sync,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_oura_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_oura_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_oura_last_error', value: code + ': ' + (msg.failure_detail || '') }\n];\nnode.warn('Oura sync failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_sync,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'oura_sync', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: code + ': ' + (msg.failure_detail || '') };\nnode.warn('Oura sync failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
     "outputs": 1,
     "x": 400,
     "y": 460,
     "wires": [
       [
         "n_oura_final_influx_write",
-        "n_oura_set_ha_entities"
+        "n_oura_sqlite_ensure_table"
       ]
     ]
   },
@@ -3584,51 +3646,6 @@
     "url": "",
     "x": 900,
     "y": 520,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "n_oura_set_ha_entities",
-    "type": "function",
-    "z": "tab_oura_sync",
-    "name": "Split entities for HA WebSocket node",
-    "func": "// Fan out msg.ha_entities into proper Home Assistant SERVICE calls, not\n// raw entity_id/value pairs. Setting a helper entity's value is a service\n// call, not a direct state write:\n//   input_boolean -> turn_on / turn_off, no extra data\n//   input_text    -> set_value, data: { value }\n//   input_datetime -> set_datetime, data: { datetime }\n// The old \"ha-entity\" node this used to feed is deprecated (Node-RED will\n// say so explicitly) — this now feeds an api-call-service (\"action\")\n// node instead.\n//\n// FIX (Aug 2026, real bug hit on first live test run): this originally\n// returned { domain, service, target, payload } as separate top-level msg\n// properties, matching the OLDER api-call-service node schema (domainType:\n// 'msg.domain' etc. — see this repo's git history). Ward's installed\n// version is the newer \"action\" node redesign (HA's own services->actions\n// rename), which does not read those properties at all — its UI showed\n// Action/Targets/Data as genuinely empty, not just unset. Current schema\n// (confirmed via the node's own docs, zachowj.github.io/node-red-contrib-\n// home-assistant-websocket/node/action.html): everything must be under\n// msg.payload as { action: 'domain.service', target: {...}, data: {...} }\n// — payload.action/target/data override the node's UI config even if the\n// UI is left blank. If a future node-version upgrade changes this schema\n// again, re-check that doc page rather than assuming this still holds.\nfunction buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 400,
-    "y": 520,
-    "wires": [
-      [
-        "n_oura_ha_set_state"
-      ]
-    ]
-  },
-  {
-    "id": "n_oura_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_oura_sync",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Deprecated 'ha-entity' node replaced with the core api-call-service (\"action\") node. FIX (Aug 2026): this node's stale domain/service/target/data/domainType/serviceType/targetType/dataFieldType properties are leftover from an OLDER version of this node's schema and don't do anything on Ward's installed version — confirmed via his own screenshot of the editor (Action/Targets/Data all showed genuinely empty, not just unset). The preceding function node now sends everything as a single msg.payload = { action, target, data } object instead, which the newer node reads directly and which overrides its UI config regardless of what's left in these stale properties (per the node's own docs) — so it's fine to leave Action/Targets/Data blank in the editor. The one thing that still MUST be set manually per install, and can't be pre-filled from JSON: the 'Server' field — open this node and select your HA connection.",
-    "x": 200,
-    "y": 580,
     "wires": [
       []
     ]
@@ -3673,11 +3690,516 @@
     ]
   },
   {
+    "id": "n_oura_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 520,
+    "wires": [
+      [
+        "n_oura_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_oura_sync",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 640,
+    "y": 520,
+    "wires": [
+      [
+        "n_oura_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 580,
+    "wires": [
+      [
+        "n_oura_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_oura_sync",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 640,
+    "y": 580,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "n_oura_checkpoint_ensure_table",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 500,
+    "y": 80,
+    "wires": [
+      [
+        "n_oura_checkpoint_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_checkpoint_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_oura_sync",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 730,
+    "y": 80,
+    "wires": [
+      [
+        "n_oura_checkpoint_query_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_checkpoint_query_prep",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "SQLite: prep checkpoint SELECT",
+    "func": "msg.topic = \"SELECT checkpoint FROM job_status WHERE job_name = 'oura_sync'\";\nreturn msg;",
+    "outputs": 1,
+    "x": 500,
+    "y": 140,
+    "wires": [
+      [
+        "n_oura_checkpoint_query_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_checkpoint_query_db",
+    "type": "sqlite",
+    "z": "tab_oura_sync",
+    "name": "sqlite: SELECT checkpoint",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 730,
+    "y": 140,
+    "wires": [
+      [
+        "n_oura_checkpoint_parse"
+      ]
+    ]
+  },
+  {
+    "id": "n_oura_checkpoint_parse",
+    "type": "function",
+    "z": "tab_oura_sync",
+    "name": "Extract checkpoint into msg.oura_last_data_date",
+    "comment": "Self-heal fix (PLAN.md §1 TODO) checkpoint, moved from an HA helper (input_datetime.lucius_oura_last_data_date) to job_status.checkpoint (Aug 2026 SQLite migration). Same downstream variable name (msg.oura_last_data_date) as before, so n_oura_fetch_sleep needed zero changes — only how the value gets INTO msg changed. Empty on a truly fresh install (no job_status row yet) is the same \"fall back to yesterday\" case the original api-current-state version already handled for an unset helper.",
+    "func": "const rows = msg.payload;\nmsg.oura_last_data_date = (Array.isArray(rows) && rows[0] && rows[0].checkpoint) ? rows[0].checkpoint : null;\nreturn msg;",
+    "outputs": 1,
+    "x": 500,
+    "y": 200,
+    "wires": [
+      [
+        "n_oura_fetch_shared_config_prep"
+      ]
+    ]
+  },
+  {
+    "id": "tab_sqlite_test",
+    "type": "tab",
+    "label": "SQLite - Test & Validate",
+    "disabled": false,
+    "info": "Validates assumptions before any real SQLite migration gets built (Ward, Aug 2026) — same discipline this project has used for every new node type (officedocs, core yaml, the HA websocket palette): guess from documentation, build a throwaway test flow, run it against the real target, fix what's actually wrong.\n\nTWO THINGS ASSUMED HERE, NOT CONFIRMED:\n1. Node type. This flow uses node type \"sqlite\" backed by a \"sqlitedb\" config node — the shape of the official node-red-node-sqlite package. If your installed package is different, Node-RED will show these nodes as unrecognized/dashed on import and refuse to deploy — that's the signal, not a bug. Tell me the actual node type shown in Manage Palette and I'll rebuild against it.\n2. Query/result shape. node-red-node-sqlite's own convention (moderate confidence, not verified against a real response): msg.topic carries the SQL text, msg.params carries bind parameters, results come back on msg.payload as an array of row objects for a SELECT. This flow logs the RAW payload at every step rather than asserting a shape, specifically because that shape is the thing being validated, not something to assume correct going in.\n\nTWO SEPARATE PARTS, run independently via their own inject nodes:\n- Part A (top): a throwaway scratch table in a brand-new file (/share/lucius_sqlite_test.db, auto-created, zero risk to anything real) — proves the node type/package works at all: CREATE TABLE IF NOT EXISTS, INSERT, SELECT, DROP TABLE cleanup.\n- Part B (bottom): a READ-ONLY check against what we're assuming is the same database the SQLite Web add-on already points at — the config node below has a CHANGE_ME placeholder path that needs replacing with the real one first (check the SQLite Web add-on's own Configuration tab in HA Settings → Add-ons, or its logs on startup, for the file it opened). Only runs `SELECT name FROM sqlite_master WHERE type='table'` — lists existing tables, changes nothing, so it's safe to point at the real file and just look.\n\nOnce both parts confirm real behavior, the actual status-tracking schema (job_name, last_success, last_attempt, last_attempt_ok, last_error) gets built as its own idempotent \"ensure schema\" flow — same CREATE TABLE IF NOT EXISTS pattern Part A already exercises here, mirroring godaddy/sql/upgrade_from_3.0.0.sql's own safe-to-rerun convention — run once by hand or at the start of every status-writing flow, not something requiring manual table creation in SQLite Web first.\n\n- Part C (added after Part A/B first showed \"unknown node type\" — no SQLite Node-RED palette is installed): checks whether the `sqlite3` CLI binary is already present in the Node-RED add-on's own container via the core `exec` node, same one already proven working for file listing/moving in Body Comp Import/Medical History Import/both wherewhen flows — no new dependency needed just to run this check. If it's there, the real flows can shell out to it directly instead of needing any npm SQLite package at all, which matters here specifically because SQLite's native-binding Node-RED packages have a real history of failing to build on Alpine/musl-based containers (what the HA Node-RED add-on runs on) — sidestepping that risk entirely beats guessing at which palette might install cleanly."
+  },
+  {
+    "id": "cfg_sqlite_scratch",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Scratch test DB (throwaway)",
+    "db": "/share/lucius_sqlite_test.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "cfg_sqlite_realdb",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "SQLite Web's real DB (READ-ONLY CHECK)",
+    "db": "/share/CHANGE_ME_sqlite_web_db_path.db",
+    "mode": "READONLY"
+  },
+  {
+    "id": "n_sqt_trigger_a",
+    "type": "inject",
+    "z": "tab_sqlite_test",
+    "name": "A: Click to test scratch DB",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 80,
+    "wires": [
+      [
+        "n_sqt_a_create"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_create",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Prep: CREATE TABLE IF NOT EXISTS",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS _claude_sqlite_test (\" +\n    \"id INTEGER PRIMARY KEY AUTOINCREMENT, job_name TEXT NOT NULL, checked_at TEXT NOT NULL)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 80,
+    "wires": [
+      [
+        "n_sqt_a_create_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_create_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: CREATE TABLE",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 80,
+    "wires": [
+      [
+        "n_sqt_a_log1"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_log1",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Log raw result 1 (CREATE)",
+    "func": "node.warn('CREATE result: ' + JSON.stringify(msg.payload));\nmsg.topic = \"INSERT INTO _claude_sqlite_test (job_name, checked_at) VALUES ('sqlite_test_probe', datetime('now'))\";\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 140,
+    "wires": [
+      [
+        "n_sqt_a_insert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_insert_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: INSERT",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 140,
+    "wires": [
+      [
+        "n_sqt_a_log2"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_log2",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Log raw result 2 (INSERT)",
+    "func": "node.warn('INSERT result: ' + JSON.stringify(msg.payload));\nmsg.topic = 'SELECT * FROM _claude_sqlite_test ORDER BY id DESC LIMIT 5';\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 200,
+    "wires": [
+      [
+        "n_sqt_a_select_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_select_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: SELECT",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 200,
+    "wires": [
+      [
+        "n_sqt_a_check"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_check",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Check + prep cleanup",
+    "func": "const problems = [];\nconst rows = msg.payload;\nnode.warn('SELECT result: ' + JSON.stringify(rows));\nif (!Array.isArray(rows)) {\n    problems.push('Expected msg.payload to be an array of row objects for a SELECT — got ' + typeof rows + '. This is exactly the assumption this test exists to check; if wrong, tell me the real shape from the RESULT debug output and the query/result handling in the real flows gets built against that instead.');\n} else if (rows.length === 0) {\n    problems.push('SELECT returned zero rows right after an INSERT into the same table — either the INSERT silently failed, or results need to be read a different way than msg.payload.');\n} else {\n    const first = rows[0];\n    if (!('job_name' in first) || !('checked_at' in first)) {\n        problems.push('Row object does not have the expected column keys — got keys: ' + Object.keys(first).join(', '));\n    }\n}\nmsg.test_problems = problems;\nmsg.topic = 'DROP TABLE IF EXISTS _claude_sqlite_test';\nreturn msg;",
+    "outputs": 1,
+    "x": 460,
+    "y": 260,
+    "wires": [
+      [
+        "n_sqt_a_cleanup_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_cleanup_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: DROP TABLE (cleanup)",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 700,
+    "y": 260,
+    "wires": [
+      [
+        "n_sqt_a_report"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_a_report",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Build Part A report",
+    "func": "node.warn('DROP TABLE (cleanup) result: ' + JSON.stringify(msg.payload));\nconst problems = msg.test_problems || [];\nmsg.payload = {\n    part: 'A - scratch DB round-trip (CREATE/INSERT/SELECT/DROP)',\n    result: problems.length ? 'PROBLEMS FOUND' : 'ALL CHECKS PASSED — node type + query/result shape confirmed',\n    problems: problems,\n};\nreturn [msg, problems.length ? msg : null];",
+    "outputs": 2,
+    "x": 940,
+    "y": 260,
+    "wires": [
+      [
+        "n_sqt_debug_result"
+      ],
+      [
+        "n_sqt_debug_problems"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_trigger_b",
+    "type": "inject",
+    "z": "tab_sqlite_test",
+    "name": "B: Click to check REAL db (read-only)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 200,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_b_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_b_prep",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Prep: list existing tables",
+    "func": "msg.topic = \"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\";\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_b_query_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_b_query_db",
+    "type": "sqlite",
+    "z": "tab_sqlite_test",
+    "name": "sqlite: list tables (real db)",
+    "mydb": "cfg_sqlite_realdb",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 720,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_b_report"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_b_report",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Build Part B report",
+    "func": "node.warn('Real-DB table list: ' + JSON.stringify(msg.payload));\nmsg.payload = {\n    part: 'B - real SQLite Web database, read-only reachability check',\n    result: 'Reached the file and ran a query — see existing_tables for what is actually in there.',\n    existing_tables: msg.payload,\n    note: 'If this errored instead of returning, the CFG_REAL config node\\'s db path is still the CHANGE_ME placeholder, or is pointed at the wrong file — fix that field and retry before trusting anything else here.',\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 960,
+    "y": 380,
+    "wires": [
+      [
+        "n_sqt_debug_result"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_trigger_c",
+    "type": "inject",
+    "z": "tab_sqlite_test",
+    "name": "C: Click to check for sqlite3 CLI",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 480,
+    "wires": [
+      [
+        "n_sqt_c_exec"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_c_exec",
+    "type": "exec",
+    "z": "tab_sqlite_test",
+    "command": "sh -c \"command -v sqlite3 && sqlite3 --version || echo NOT_FOUND\"",
+    "addpay": false,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "10",
+    "winHide": false,
+    "oldrc": false,
+    "name": "Check for sqlite3 CLI on PATH",
+    "x": 460,
+    "y": 480,
+    "wires": [
+      [
+        "n_sqt_c_report"
+      ],
+      [
+        "n_sqt_c_report"
+      ],
+      []
+    ]
+  },
+  {
+    "id": "n_sqt_c_report",
+    "type": "function",
+    "z": "tab_sqlite_test",
+    "name": "Build Part C report",
+    "func": "const out = (msg.payload || '').toString().trim();\nconst found = out && !out.includes('NOT_FOUND');\nnode.warn('sqlite3 CLI check raw output: ' + JSON.stringify(out));\nmsg.payload = {\n    part: 'C - sqlite3 CLI availability in the Node-RED container',\n    result: found ? 'FOUND — exec+CLI is a viable path, no npm palette needed' : 'NOT FOUND — either install a SQLite palette (watch for a native-build failure on Alpine) or add sqlite3 to the container another way',\n    raw_output: out,\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 720,
+    "y": 480,
+    "wires": [
+      [
+        "n_sqt_debug_result"
+      ]
+    ]
+  },
+  {
+    "id": "n_sqt_debug_result",
+    "type": "debug",
+    "z": "tab_sqlite_test",
+    "name": "RESULT",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1180,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "n_sqt_debug_problems",
+    "type": "debug",
+    "z": "tab_sqlite_test",
+    "name": "PROBLEMS FOUND (also fires node status)",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload.problems",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1180,
+    "y": 320,
+    "wires": []
+  },
+  {
     "id": "tab_status_heartbeat",
     "type": "tab",
     "label": "Lucius - Status Heartbeat",
     "disabled": false,
-    "info": "Runs every 15 minutes (PLAN.md §15). Deliberately a fifth, dedicated flow rather than each sync flow pushing its own status inline — reads the HA helper entities the other three flows already maintain, computes one consolidated snapshot, pushes it to GoDaddy's new api/status_push.php (feeds status.php's HA/Node-RED/Analytics view), and writes the same snapshot to a new InfluxDB measurement (system_status_snapshot) per Ward's explicit request to keep it there for trend-watching.\n\nUNTESTED, same caveat as the other three flows — PLUS one piece of real, deliberate scope-narrowing worth knowing about: PLAN.md §15 suggested this flow also query HA's own /api/config for HA version/uptime, to give the 'HA' category more than just a heartbeat. That's NOT implemented here — it would need either a Supervisor API token or a manually-managed long-lived access token, neither of which this project otherwise needs, and guessing at that auth mechanism without confirming it against a real HA instance felt like exactly the kind of unverified assumption this project has been burned by before (see PLAN.md §2's require('fs') and /config lessons). Instead, the 'ha' category's only component (ha_core) uses this heartbeat's own successful execution as the signal — which is still real signal: if HA/Node-RED goes down, this flow stops running, ha_core goes overdue on status.php, and that overdue state IS the answer to 'is HA up.' Richer HA-native detail is a clearly flagged open follow-up, not a silent gap.\n\nAlso unverified: the 12 chained api-current-state nodes reading the other flows' helper entities via outputProperties (valueType 'entityState') — a reasonable, standard use of this palette's read capability, but this project has only used it for WRITES (api-call-service) so far, never reads."
+    "info": "Runs every 15 minutes (PLAN.md §15). Deliberately a fifth, dedicated flow rather than each sync flow pushing its own status inline — reads the shared job_status SQLite table every status-writing flow now maintains (Aug 2026 SQLite migration, see below), computes one consolidated snapshot, pushes it to GoDaddy's api/status_push.php (feeds status.php's HA/Node-RED/Analytics view), and writes the same snapshot to InfluxDB's system_status_snapshot measurement per Ward's explicit request to keep it there for trend-watching.\n\nSQLite MIGRATION (Aug 2026) — this flow used to chain 28 api-current-state HA reads (4 fields × 7 flows), one per helper entity, each needing its own manually-configured Server field. Replaced with a single SELECT * FROM job_status against /share/lucius_status.db (the same file every flow's job_success/job_failed nodes write to) — no HA connection needed for this flow at all anymore. dashboard.yaml's old Lovelace card, which showed 3 of these flows' HA entities directly, is retired along with the entities themselves — status.php and this flow's own InfluxDB write are now the only places this data lives.\n\nUNTESTED, same caveat as every flow in this project — PLUS one piece of real, deliberate scope-narrowing worth knowing about: PLAN.md §15 suggested this flow also query HA's own /api/config for HA version/uptime, to give the 'HA' category more than just a heartbeat. That's NOT implemented here — it would need either a Supervisor API token or a manually-managed long-lived access token, neither of which this project otherwise needs. Instead, the 'ha' category's only component (ha_core) uses this heartbeat's own successful execution as the signal — which is still real signal: if HA/Node-RED goes down, this flow stops running, ha_core goes overdue on status.php, and that overdue state IS the answer to 'is HA up.' Richer HA-native detail is a clearly flagged open follow-up, not a silent gap."
   },
   {
     "id": "n_sh_trigger",
@@ -3751,633 +4273,7 @@
     "y": 60,
     "wires": [
       [
-        "n_sh_read_oura_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_oura_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "halt_if": "",
-    "halt_if_type": "str",
-    "halt_if_compare": "is",
-    "entity_id": "input_datetime.lucius_oura_last_success",
-    "state_type": "str",
-    "state_location": "oura_last_success",
-    "override_topic": false,
-    "state_type_write": "msg",
-    "state_location_write": "oura_last_success",
-    "override_topic_write": false,
-    "override_payload": "msg",
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "outputProperties/state_location fields vary by palette version — confirm this writes to msg.oura_last_success in the editor after import.",
-    "x": 240,
-    "y": 140,
-    "wires": [
-      [
-        "n_sh_read_oura_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_oura_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_oura_last_attempt",
-    "state_type": "str",
-    "state_location": "oura_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 490,
-    "y": 140,
-    "wires": [
-      [
-        "n_sh_read_oura_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_oura_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_oura_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "oura_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 740,
-    "y": 140,
-    "wires": [
-      [
-        "n_sh_read_oura_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_oura_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_oura_last_error",
-    "state_type": "str",
-    "state_location": "oura_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 990,
-    "y": 140,
-    "wires": [
-      [
-        "n_sh_read_godaddy_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_godaddy_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_godaddy_last_success",
-    "state_type": "str",
-    "state_location": "godaddy_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 240,
-    "y": 200,
-    "wires": [
-      [
-        "n_sh_read_godaddy_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_godaddy_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_godaddy_last_attempt",
-    "state_type": "str",
-    "state_location": "godaddy_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 490,
-    "y": 200,
-    "wires": [
-      [
-        "n_sh_read_godaddy_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_godaddy_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_godaddy_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "godaddy_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 740,
-    "y": 200,
-    "wires": [
-      [
-        "n_sh_read_godaddy_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_godaddy_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_godaddy_last_error",
-    "state_type": "str",
-    "state_location": "godaddy_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 990,
-    "y": 200,
-    "wires": [
-      [
-        "n_sh_read_bodycomp_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_bodycomp_last_success",
-    "state_type": "str",
-    "state_location": "bodycomp_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 240,
-    "y": 260,
-    "wires": [
-      [
-        "n_sh_read_bodycomp_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_bodycomp_last_attempt",
-    "state_type": "str",
-    "state_location": "bodycomp_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 490,
-    "y": 260,
-    "wires": [
-      [
-        "n_sh_read_bodycomp_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_bodycomp_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "bodycomp_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 740,
-    "y": 260,
-    "wires": [
-      [
-        "n_sh_read_bodycomp_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_bodycomp_last_error",
-    "state_type": "str",
-    "state_location": "bodycomp_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 990,
-    "y": 260,
-    "wires": [
-      [
-        "n_sh_read_mhi_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_mhi_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_mhi_last_success",
-    "state_type": "str",
-    "state_location": "mhi_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "Fulgrim validation pass (Aug 2026) — extends the existing 3-flow status heartbeat to also cover the 3 flows added this session (PLAN.md §19/20). Same read-chain-then-pushComponent() pattern as oura/godaddy/bodycomp above, no new mechanism.",
-    "x": 240,
-    "y": 420,
-    "wires": [
-      [
-        "n_sh_read_mhi_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_mhi_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_mhi_last_attempt",
-    "state_type": "str",
-    "state_location": "mhi_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 370,
-    "y": 420,
-    "wires": [
-      [
-        "n_sh_read_mhi_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_mhi_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_mhi_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "mhi_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 500,
-    "y": 420,
-    "wires": [
-      [
-        "n_sh_read_mhi_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_mhi_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_mhi_last_error",
-    "state_type": "str",
-    "state_location": "mhi_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 630,
-    "y": 420,
-    "wires": [
-      [
-        "n_sh_read_wde_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wde_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_export_last_success",
-    "state_type": "str",
-    "state_location": "wde_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 780,
-    "y": 420,
-    "wires": [
-      [
-        "n_sh_read_wde_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wde_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_export_last_attempt",
-    "state_type": "str",
-    "state_location": "wde_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 940,
-    "y": 420,
-    "wires": [
-      [
-        "n_sh_read_wde_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wde_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_wherewhen_export_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "wde_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 240,
-    "y": 480,
-    "wires": [
-      [
-        "n_sh_read_wde_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wde_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_wherewhen_export_last_error",
-    "state_type": "str",
-    "state_location": "wde_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 400,
-    "y": 480,
-    "wires": [
-      [
-        "n_sh_read_wdr_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wdr_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_restore_last_success",
-    "state_type": "str",
-    "state_location": "wdr_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 560,
-    "y": 480,
-    "wires": [
-      [
-        "n_sh_read_wdr_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wdr_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_restore_last_attempt",
-    "state_type": "str",
-    "state_location": "wdr_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 730,
-    "y": 480,
-    "wires": [
-      [
-        "n_sh_read_wdr_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wdr_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_wherewhen_restore_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "wdr_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 900,
-    "y": 480,
-    "wires": [
-      [
-        "n_sh_read_wdr_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_wdr_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_wherewhen_restore_last_error",
-    "state_type": "str",
-    "state_location": "wdr_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 1070,
-    "y": 480,
-    "wires": [
-      [
-        "n_sh_read_ae_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_ae_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_analysis_engine_last_success",
-    "state_type": "str",
-    "state_location": "ae_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "Fulgrim Flux-engine pass (Aug 2026) — 7th flow, same read-chain-then-pushComponent() pattern as everything above.",
-    "x": 240,
-    "y": 540,
-    "wires": [
-      [
-        "n_sh_read_ae_attempt"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_ae_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_analysis_engine_last_attempt",
-    "state_type": "str",
-    "state_location": "ae_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 370,
-    "y": 540,
-    "wires": [
-      [
-        "n_sh_read_ae_ok"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_ae_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_analysis_engine_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "ae_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 500,
-    "y": 540,
-    "wires": [
-      [
-        "n_sh_read_ae_error"
-      ]
-    ]
-  },
-  {
-    "id": "n_sh_read_ae_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_analysis_engine_last_error",
-    "state_type": "str",
-    "state_location": "ae_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 630,
-    "y": 540,
-    "wires": [
-      [
-        "n_sh_build_reports"
+        "n_sh_query_job_status_prep"
       ]
     ]
   },
@@ -4385,8 +4281,8 @@
     "id": "n_sh_build_reports",
     "type": "function",
     "z": "tab_status_heartbeat",
-    "name": "Build reports array (7 flows + ha_core)",
-    "func": "function clean(v) { return (v && v !== 'unknown' && v !== 'unavailable') ? v : null; }\nconst now = new Date().toISOString();\nconst reports = [];\n\n// This flow's own successful execution IS the 'HA is up' signal — see\n// this tab's info note for why /api/config enrichment isn't implemented.\nreports.push({\n    category: 'ha', component: 'ha_core',\n    last_run_at: now, last_status: 'success',\n    expected_frequency_minutes: 15,\n    detail: 'Signal is this heartbeat itself running — real HA version/uptime not implemented yet, see flow tab info.'\n});\n\nfunction pushComponent(component, prefix, expectedMin) {\n    const ok = msg[prefix + '_last_attempt_ok'];\n    reports.push({\n        category: 'nodered',\n        component: component,\n        last_run_at: clean(msg[prefix + '_last_attempt']),\n        last_status: ok === 'on' ? 'success' : (ok === 'off' ? 'failed' : 'unknown'),\n        last_error: clean(msg[prefix + '_last_error']),\n        expected_frequency_minutes: expectedMin,\n    });\n}\npushComponent('oura_sync', 'oura', 240);\npushComponent('godaddy_pull', 'godaddy', 15);\npushComponent('bodycomp_import', 'bodycomp', 1440);\n// Fulgrim validation pass (Aug 2026) — the 3 flows added that session\n// (PLAN.md §19/20). medical_history_import and wherewhen_restore are\n// manual/on-demand only (no real cadence), so expectedMin is null —\n// overdue_info() in db.php already treats a null expected_frequency_minutes\n// as \"not schedule-based, nothing to compute\" rather than always-overdue.\n// wherewhen_export has a real weekly schedule (Sunday 3am) alongside its\n// manual trigger, so it gets a real expectedMin (7 days).\npushComponent('medical_history_import', 'mhi', null);\npushComponent('wherewhen_export', 'wde', 10080);\npushComponent('wherewhen_restore', 'wdr', null);\n// analysis_engine (Fulgrim Flux-engine pass, Aug 2026) — daily is its\n// tightest scheduled tier (weekly/monthly also run but daily is what\n// 'overdue' should track against; all-data is manual-only like the two\n// manual flows above and isn't reflected in this single expectedMin).\npushComponent('analysis_engine', 'ae', 1440);\n\nmsg.reports = reports;\nreturn msg;",
+    "name": "Build reports array (from SQLite job_status)",
+    "func": "function clean(v) { return (v && v !== 'unknown' && v !== 'unavailable') ? v : null; }\nconst now = new Date().toISOString();\nconst reports = [];\n\n// This flow's own successful execution IS the 'HA is up' signal — see\n// this tab's info note for why /api/config enrichment isn't implemented.\nreports.push({\n    category: 'ha', component: 'ha_core',\n    last_run_at: now, last_status: 'success',\n    expected_frequency_minutes: 15,\n    detail: 'Signal is this heartbeat itself running — real HA version/uptime not implemented yet, see flow tab info.'\n});\n\n// SQLite migration (Aug 2026) — replaces what used to be 28 chained\n// api-current-state HA reads (4 fields × 7 flows) with one SELECT * FROM\n// job_status, read once upstream (n_sh_query_job_status_db) and handed in\n// here as msg.payload (array of row objects). last_attempt_ok is a real\n// SQLite INTEGER (0/1) now, not HA's 'on'/'off' string.\nconst byJob = {};\n(msg.payload || []).forEach(r => { byJob[r.job_name] = r; });\n\nfunction pushComponent(component, jobName, expectedMin) {\n    const row = byJob[jobName];\n    const ok = row ? row.last_attempt_ok : null;\n    reports.push({\n        category: 'nodered',\n        component: component,\n        last_run_at: row ? clean(row.last_attempt) : null,\n        last_status: ok === 1 ? 'success' : (ok === 0 ? 'failed' : 'unknown'),\n        last_error: row ? clean(row.last_error) : null,\n        expected_frequency_minutes: expectedMin,\n    });\n}\npushComponent('oura_sync', 'oura_sync', 240);\npushComponent('godaddy_pull', 'godaddy_pull', 15);\npushComponent('bodycomp_import', 'bodycomp_import', 1440);\n// medical_history_import and wherewhen_restore are manual/on-demand only\n// (no real cadence), so expectedMin is null — overdue_info() in db.php\n// already treats a null expected_frequency_minutes as \"not schedule-based,\n// nothing to compute\" rather than always-overdue. wherewhen_export has a\n// real weekly schedule (Sunday 3am) alongside its manual trigger, so it\n// gets a real expectedMin (7 days). analysis_engine's daily tier (~12:15pm)\n// is its tightest scheduled cadence.\npushComponent('medical_history_import', 'medical_history_import', null);\npushComponent('wherewhen_export', 'wherewhen_export', 10080);\npushComponent('wherewhen_restore', 'wherewhen_restore', null);\npushComponent('analysis_engine', 'analysis_engine', 1440);\n\nmsg.reports = reports;\nreturn msg;",
     "outputs": 1,
     "x": 250,
     "y": 340,
@@ -4502,6 +4398,77 @@
     "wires": [
       []
     ]
+  },
+  {
+    "id": "n_sh_query_job_status_prep",
+    "type": "function",
+    "z": "tab_status_heartbeat",
+    "name": "SQLite: prep job_status query",
+    "comment": "Ensures the table exists first (cheap no-op if it already does, same pattern as every status-writing flow) — this flow could plausibly be the very first thing that ever queries job_status on a fresh install, before any job has run to create it.",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 260,
+    "y": 460,
+    "wires": [
+      [
+        "n_sh_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sh_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_status_heartbeat",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 500,
+    "y": 460,
+    "wires": [
+      [
+        "n_sh_query_job_status_select_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_sh_query_job_status_select_prep",
+    "type": "function",
+    "z": "tab_status_heartbeat",
+    "name": "SQLite: prep SELECT * FROM job_status",
+    "func": "msg.topic = 'SELECT * FROM job_status';\nreturn msg;",
+    "outputs": 1,
+    "x": 260,
+    "y": 520,
+    "wires": [
+      [
+        "n_sh_query_job_status_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sh_query_job_status_db",
+    "type": "sqlite",
+    "z": "tab_status_heartbeat",
+    "name": "sqlite: SELECT * FROM job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 500,
+    "y": 520,
+    "wires": [
+      [
+        "n_sh_build_reports"
+      ]
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_system_test",
@@ -5055,14 +5022,14 @@
     "type": "function",
     "z": "tab_wherewhen_export",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst measurements = flow.get('wde_measurements') || [];\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=success measurement_count=' + measurements.length + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_wherewhen_export_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_wherewhen_export_last_attempt_ok', value: 'on' },\n    { entity_id: 'input_datetime.lucius_wherewhen_export_last_attempt', value: new Date().toISOString() }\n];\nif (!msg.secrets) msg.secrets = flow.get('wde_secrets');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst measurements = flow.get('wde_measurements') || [];\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=success measurement_count=' + measurements.length + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_export', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nif (!msg.secrets) msg.secrets = flow.get('wde_secrets');\nreturn msg;",
     "outputs": 1,
     "x": 400,
     "y": 460,
     "wires": [
       [
         "n_wde_final_influx_write",
-        "n_wde_set_ha_entities"
+        "n_wde_sqlite_ensure_table"
       ]
     ]
   },
@@ -5096,51 +5063,6 @@
     ]
   },
   {
-    "id": "n_wde_set_ha_entities",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Split entities for HA WebSocket node",
-    "func": "function buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 400,
-    "y": 520,
-    "wires": [
-      [
-        "n_wde_ha_set_state"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_wherewhen_export",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same node config as every other flow's equivalent — msg.payload carries {action, target, data} directly. Must set the 'Server' field manually per install.",
-    "x": 200,
-    "y": 520,
-    "wires": [
-      []
-    ]
-  },
-  {
     "id": "n_wde_catch",
     "type": "catch",
     "z": "tab_wherewhen_export",
@@ -5161,16 +5083,84 @@
     "type": "function",
     "z": "tab_wherewhen_export",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wde_secrets');\nmsg.job_started_at = flow.get('wde_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_wherewhen_export_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_wherewhen_export_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_wherewhen_export_last_error', value: (source + ': ' + detail).slice(0, 250) }\n];\nnode.warn('wherewhen Data Export failed: ' + source + ': ' + detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wde_secrets');\nmsg.job_started_at = flow.get('wde_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_export', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('wherewhen Data Export failed: ' + source + ': ' + detail);\nreturn msg;",
     "outputs": 1,
     "x": 560,
     "y": 620,
     "wires": [
       [
         "n_wde_final_influx_write",
-        "n_wde_set_ha_entities"
+        "n_wde_sqlite_ensure_table"
       ]
     ]
+  },
+  {
+    "id": "n_wde_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_wherewhen_export",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 520,
+    "wires": [
+      [
+        "n_wde_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_wde_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_wherewhen_export",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 640,
+    "y": 520,
+    "wires": [
+      [
+        "n_wde_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_wde_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_wherewhen_export",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 580,
+    "wires": [
+      [
+        "n_wde_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_wde_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_wherewhen_export",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 640,
+    "y": 580,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_wherewhen_restore",
@@ -5585,14 +5575,14 @@
     "type": "function",
     "z": "tab_wherewhen_restore",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst warnCount = (msg.verify_warnings || []).length;\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=success total_lines_restored=' + (msg.total_lines_restored || 0) + ',verify_warning_count=' + warnCount + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_wherewhen_restore_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_wherewhen_restore_last_attempt_ok', value: warnCount ? 'off' : 'on' },\n    { entity_id: 'input_datetime.lucius_wherewhen_restore_last_attempt', value: new Date().toISOString() }\n];\nif (!msg.secrets) msg.secrets = flow.get('wdr_secrets');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst warnCount = (msg.verify_warnings || []).length;\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=success total_lines_restored=' + (msg.total_lines_restored || 0) + ',verify_warning_count=' + warnCount + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_restore', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: warnCount ? 0 : 1 };\nif (!msg.secrets) msg.secrets = flow.get('wdr_secrets');\nreturn msg;",
     "outputs": 1,
     "x": 730,
     "y": 480,
     "wires": [
       [
         "n_wdr_final_influx_write",
-        "n_wdr_set_ha_entities"
+        "n_wdr_sqlite_ensure_table"
       ]
     ]
   },
@@ -5626,51 +5616,6 @@
     ]
   },
   {
-    "id": "n_wdr_set_ha_entities",
-    "type": "function",
-    "z": "tab_wherewhen_restore",
-    "name": "Split entities for HA WebSocket node",
-    "func": "function buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 480,
-    "y": 540,
-    "wires": [
-      [
-        "n_wdr_ha_set_state"
-      ]
-    ]
-  },
-  {
-    "id": "n_wdr_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_wherewhen_restore",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same node config as every other flow's equivalent — msg.payload carries {action, target, data} directly. Must set the 'Server' field manually per install.",
-    "x": 220,
-    "y": 600,
-    "wires": [
-      []
-    ]
-  },
-  {
     "id": "n_wdr_catch",
     "type": "catch",
     "z": "tab_wherewhen_restore",
@@ -5691,16 +5636,84 @@
     "type": "function",
     "z": "tab_wherewhen_restore",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wdr_secrets');\nmsg.job_started_at = flow.get('wdr_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_wherewhen_restore_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_wherewhen_restore_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_wherewhen_restore_last_error', value: (source + ': ' + detail).slice(0, 250) }\n];\nnode.warn('wherewhen Data Restore failed: ' + source + ': ' + detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wdr_secrets');\nmsg.job_started_at = flow.get('wdr_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_restore', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('wherewhen Data Restore failed: ' + source + ': ' + detail);\nreturn msg;",
     "outputs": 1,
     "x": 560,
     "y": 680,
     "wires": [
       [
         "n_wdr_final_influx_write",
-        "n_wdr_set_ha_entities"
+        "n_wdr_sqlite_ensure_table"
       ]
     ]
+  },
+  {
+    "id": "n_wdr_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_wherewhen_restore",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 540,
+    "wires": [
+      [
+        "n_wdr_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_wherewhen_restore",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 720,
+    "y": 540,
+    "wires": [
+      [
+        "n_wdr_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_wherewhen_restore",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 600,
+    "wires": [
+      [
+        "n_wdr_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_wherewhen_restore",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 720,
+    "y": 600,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   },
   {
     "id": "tab_wdr_test",

@@ -471,6 +471,29 @@ Reusing the existing HA helper entities rather than having every flow separately
 - **Overdue formula:** `elapsed > expected_frequency_minutes + max(15, expected * 0.25)` — this section's draft only gave illustrative examples ("~4.5h" for a 4h schedule, "~20min" for a 15min one) without a formula; this is a reasonable approximation that lands close to both examples, not a value Ward specified exactly.
 - **`system_status_snapshot`'s InfluxDB fields:** just `status_ok` (1/0) per component per run, tagged by `category`/`component` — enough for "how often has X actually been failing" trend queries (Ward's stated reason for wanting this in InfluxDB at all) without duplicating everything `system_status_reports` already holds on the GoDaddy side.
 
+### SQLite migration (Aug 2026) — replaces every HA helper entity read/write project-wide
+
+Ward's own framing: setting the `api-call-service`/`api-current-state` nodes' HA **Server** field by hand, per flow, per install (never exportable, since it's install-specific) was "a lot of work" — and Status Heartbeat alone had grown to 28 of the read side (4 fields × 7 flows) just to build one report. Rather than patch around that per-flow, every flow's status tracking (last_success/last_attempt/last_attempt_ok/last_error, plus oura_sync's self-heal `checkpoint`) moved to a single shared SQLite table, `job_status`, in a dedicated database (`/share/lucius_status.db`) — **not** the same file the SQLite Web add-on happened to already be pointed at (`/homeassistant/home-assistant_v2.db`, HA's own core recorder database — flagged and avoided specifically because commingling an unrelated app's tables into HA's own actively-written, HA-migration-managed database has a much larger blast radius than a dedicated file, and real risk of write-lock contention under load).
+
+**Result: `node-red-contrib-home-assistant-websocket` is no longer used anywhere in this project.** Every `api-call-service`/`api-current-state` node across all 7 status-writing flows plus Status Heartbeat's whole 28-node read chain is gone. `ha_config/helpers.yaml` and `ha_config/dashboard.yaml` are retired (contents commented out, left as a historical record — see either file's own header).
+
+**Validated before being trusted, same discipline as every new node type in this project:** a dedicated test flow (`nodered/sqlite_test_flow.json`) confirmed the actual installed package (`node-red-node-sqlite`, after an initial guess needed correcting — Ward's Node-RED didn't have any SQLite palette installed at first) and its real query/result shape (`msg.topic` = SQL text in, `msg.payload` = array of row objects out) against Ward's real instance, before any production flow got rebuilt against those assumptions. Beyond that: every touched function body was syntax-checked, and the actual generated UPSERT statements were executed against a real (offline, local) SQLite engine with correct results — including the trickier semantics (a failure must not overwrite the last known `last_success`/`checkpoint`, confirmed with a real success-then-failure sequence).
+
+**Schema** (one table, created idempotently by whichever flow happens to write or query it first — no separate manual migration step, matching Ward's own request for "a node red task that initializes it, and keeps it up to date"):
+```sql
+CREATE TABLE IF NOT EXISTS job_status (
+    job_name TEXT PRIMARY KEY,
+    last_success TEXT,
+    last_attempt TEXT,
+    last_attempt_ok INTEGER,
+    last_error TEXT,
+    checkpoint TEXT,
+    updated_at TEXT
+)
+```
+
+**Still unconfirmed:** the whole mechanism has never run inside an actual deployed Node-RED flow against the real `/share/lucius_status.db` — only against `sqlite_test_flow.json`'s own scratch table and an offline Python-side simulation. Also unconfirmed: whether the shared `cfg_lucius_status_db` config node (deliberately duplicated, byte-identical, once per flow file) deduplicates cleanly when multiple flows referencing it get imported together, rather than creating redundant connections to the same file.
+
 ## 16. GoDaddy weight chart page (built — `godaddy/app/weight_deviation.php`)
 
 A new page — column/bar chart of weight over a selectable time range, with a specific, deliberate framing Ward asked for: **bars represent deviation from the *range's own average*, not absolute weight** — zero baseline is that average, bars extend up above it or down below it. Recalculated per range, not a fixed global average, so switching the date range changes what "average" (and therefore what counts as above/below) means.

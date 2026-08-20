@@ -11,7 +11,11 @@
     "type": "inject",
     "z": "tab_wherewhen_restore",
     "name": "Manual trigger — EDIT payload before clicking",
-    "props": [ { "p": "payload" } ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
     "repeat": "",
     "crontab": "",
     "once": false,
@@ -21,7 +25,11 @@
     "payloadType": "json",
     "x": 220,
     "y": 60,
-    "wires": [ [ "n_wdr_capture_backup_dir" ] ]
+    "wires": [
+      [
+        "n_wdr_capture_backup_dir"
+      ]
+    ]
   },
   {
     "id": "n_wdr_capture_backup_dir",
@@ -32,7 +40,11 @@
     "outputs": 1,
     "x": 460,
     "y": 60,
-    "wires": [ [ "n_wdr_read_secrets_file" ] ]
+    "wires": [
+      [
+        "n_wdr_read_secrets_file"
+      ]
+    ]
   },
   {
     "id": "n_wdr_read_secrets_file",
@@ -48,7 +60,11 @@
     "allProps": false,
     "x": 720,
     "y": 60,
-    "wires": [ [ "n_wdr_load_secrets" ] ]
+    "wires": [
+      [
+        "n_wdr_load_secrets"
+      ]
+    ]
   },
   {
     "id": "n_wdr_load_secrets",
@@ -59,7 +75,11 @@
     "outputs": 1,
     "x": 970,
     "y": 60,
-    "wires": [ [ "n_wdr_write_start_http" ] ]
+    "wires": [
+      [
+        "n_wdr_write_start_http"
+      ]
+    ]
   },
   {
     "id": "n_wdr_write_start_http",
@@ -71,7 +91,11 @@
     "url": "",
     "x": 220,
     "y": 120,
-    "wires": [ [ "n_wdr_parse_manifest_prep" ] ]
+    "wires": [
+      [
+        "n_wdr_parse_manifest_prep"
+      ]
+    ]
   },
   {
     "id": "n_wdr_parse_manifest_prep",
@@ -82,7 +106,11 @@
     "outputs": 1,
     "x": 470,
     "y": 120,
-    "wires": [ [ "n_wdr_read_manifest" ] ]
+    "wires": [
+      [
+        "n_wdr_read_manifest"
+      ]
+    ]
   },
   {
     "id": "n_wdr_read_manifest",
@@ -98,7 +126,11 @@
     "allProps": false,
     "x": 720,
     "y": 120,
-    "wires": [ [ "n_wdr_parse_manifest" ] ]
+    "wires": [
+      [
+        "n_wdr_parse_manifest"
+      ]
+    ]
   },
   {
     "id": "n_wdr_parse_manifest",
@@ -109,7 +141,11 @@
     "outputs": 1,
     "x": 720,
     "y": 180,
-    "wires": [ [ "n_wdr_list_csv_files" ] ]
+    "wires": [
+      [
+        "n_wdr_list_csv_files"
+      ]
+    ]
   },
   {
     "id": "n_wdr_list_csv_files",
@@ -125,7 +161,13 @@
     "name": "List *.csv in backup_dir",
     "x": 970,
     "y": 180,
-    "wires": [ [ "n_wdr_parse_file_list" ], [], [] ]
+    "wires": [
+      [
+        "n_wdr_parse_file_list"
+      ],
+      [],
+      []
+    ]
   },
   {
     "id": "n_wdr_parse_file_list",
@@ -136,7 +178,14 @@
     "outputs": 2,
     "x": 220,
     "y": 240,
-    "wires": [ [ "n_wdr_split_files" ], [ "n_wdr_job_success" ] ]
+    "wires": [
+      [
+        "n_wdr_split_files"
+      ],
+      [
+        "n_wdr_job_success"
+      ]
+    ]
   },
   {
     "id": "n_wdr_split_files",
@@ -152,7 +201,11 @@
     "property": "files",
     "x": 480,
     "y": 240,
-    "wires": [ [ "n_wdr_read_csv_file" ] ]
+    "wires": [
+      [
+        "n_wdr_read_csv_file"
+      ]
+    ]
   },
   {
     "id": "n_wdr_read_csv_file",
@@ -168,7 +221,11 @@
     "allProps": false,
     "x": 730,
     "y": 240,
-    "wires": [ [ "n_wdr_parse_csv_to_lines" ] ]
+    "wires": [
+      [
+        "n_wdr_parse_csv_to_lines"
+      ]
+    ]
   },
   {
     "id": "n_wdr_parse_csv_to_lines",
@@ -179,7 +236,11 @@
     "outputs": 1,
     "x": 990,
     "y": 240,
-    "wires": [ [ "n_wdr_write_influx_http" ] ]
+    "wires": [
+      [
+        "n_wdr_write_influx_http"
+      ]
+    ]
   },
   {
     "id": "n_wdr_write_influx_http",
@@ -191,7 +252,11 @@
     "url": "",
     "x": 220,
     "y": 300,
-    "wires": [ [ "n_wdr_join_files" ] ]
+    "wires": [
+      [
+        "n_wdr_join_files"
+      ]
+    ]
   },
   {
     "id": "n_wdr_join_files",
@@ -212,7 +277,11 @@
     "comment": "Paired with n_wdr_split_files via msg.parts (mode: auto).",
     "x": 470,
     "y": 300,
-    "wires": [ [ "n_wdr_prep_verify" ] ]
+    "wires": [
+      [
+        "n_wdr_prep_verify"
+      ]
+    ]
   },
   {
     "id": "n_wdr_prep_verify",
@@ -223,7 +292,14 @@
     "outputs": 2,
     "x": 730,
     "y": 300,
-    "wires": [ [ "n_wdr_split_verify" ], [ "n_wdr_build_verify_report" ] ]
+    "wires": [
+      [
+        "n_wdr_split_verify"
+      ],
+      [
+        "n_wdr_build_verify_report"
+      ]
+    ]
   },
   {
     "id": "n_wdr_split_verify",
@@ -239,7 +315,11 @@
     "property": "measurements",
     "x": 220,
     "y": 360,
-    "wires": [ [ "n_wdr_prep_count_query" ] ]
+    "wires": [
+      [
+        "n_wdr_prep_count_query"
+      ]
+    ]
   },
   {
     "id": "n_wdr_prep_count_query",
@@ -250,7 +330,11 @@
     "outputs": 1,
     "x": 480,
     "y": 360,
-    "wires": [ [ "n_wdr_count_http" ] ]
+    "wires": [
+      [
+        "n_wdr_count_http"
+      ]
+    ]
   },
   {
     "id": "n_wdr_count_http",
@@ -262,7 +346,11 @@
     "url": "",
     "x": 720,
     "y": 360,
-    "wires": [ [ "n_wdr_parse_count" ] ]
+    "wires": [
+      [
+        "n_wdr_parse_count"
+      ]
+    ]
   },
   {
     "id": "n_wdr_parse_count",
@@ -273,7 +361,11 @@
     "outputs": 1,
     "x": 970,
     "y": 360,
-    "wires": [ [ "n_wdr_join_verify" ] ]
+    "wires": [
+      [
+        "n_wdr_join_verify"
+      ]
+    ]
   },
   {
     "id": "n_wdr_join_verify",
@@ -294,7 +386,11 @@
     "comment": "Paired with n_wdr_split_verify via msg.parts (mode: auto).",
     "x": 220,
     "y": 420,
-    "wires": [ [ "n_wdr_build_verify_report" ] ]
+    "wires": [
+      [
+        "n_wdr_build_verify_report"
+      ]
+    ]
   },
   {
     "id": "n_wdr_build_verify_report",
@@ -305,18 +401,27 @@
     "outputs": 1,
     "x": 480,
     "y": 420,
-    "wires": [ [ "n_wdr_job_success" ] ]
+    "wires": [
+      [
+        "n_wdr_job_success"
+      ]
+    ]
   },
   {
     "id": "n_wdr_job_success",
     "type": "function",
     "z": "tab_wherewhen_restore",
     "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst warnCount = (msg.verify_warnings || []).length;\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=success total_lines_restored=' + (msg.total_lines_restored || 0) + ',verify_warning_count=' + warnCount + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_datetime.lucius_wherewhen_restore_last_success', value: new Date().toISOString() },\n    { entity_id: 'input_boolean.lucius_wherewhen_restore_last_attempt_ok', value: warnCount ? 'off' : 'on' },\n    { entity_id: 'input_datetime.lucius_wherewhen_restore_last_attempt', value: new Date().toISOString() }\n];\nif (!msg.secrets) msg.secrets = flow.get('wdr_secrets');\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst warnCount = (msg.verify_warnings || []).length;\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=success total_lines_restored=' + (msg.total_lines_restored || 0) + ',verify_warning_count=' + warnCount + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_restore', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: warnCount ? 0 : 1 };\nif (!msg.secrets) msg.secrets = flow.get('wdr_secrets');\nreturn msg;",
     "outputs": 1,
     "x": 730,
     "y": 480,
-    "wires": [ [ "n_wdr_final_influx_write", "n_wdr_set_ha_entities" ] ]
+    "wires": [
+      [
+        "n_wdr_final_influx_write",
+        "n_wdr_sqlite_ensure_table"
+      ]
+    ]
   },
   {
     "id": "n_wdr_final_influx_write",
@@ -327,7 +432,11 @@
     "outputs": 1,
     "x": 990,
     "y": 480,
-    "wires": [ [ "n_wdr_final_influx_http" ] ]
+    "wires": [
+      [
+        "n_wdr_final_influx_http"
+      ]
+    ]
   },
   {
     "id": "n_wdr_final_influx_http",
@@ -339,46 +448,9 @@
     "url": "",
     "x": 220,
     "y": 540,
-    "wires": [ [] ]
-  },
-  {
-    "id": "n_wdr_set_ha_entities",
-    "type": "function",
-    "z": "tab_wherewhen_restore",
-    "name": "Split entities for HA WebSocket node",
-    "func": "function buildServiceCall(entity_id, value) {\n    const domain = entity_id.split('.')[0];\n    if (domain === 'input_boolean') {\n        return { domain, service: value === 'on' ? 'turn_on' : 'turn_off', target: { entity_id }, data: {} };\n    }\n    if (domain === 'input_text') {\n        return { domain, service: 'set_value', target: { entity_id }, data: { value: String(value) } };\n    }\n    if (domain === 'input_datetime') {\n        return { domain, service: 'set_datetime', target: { entity_id }, data: { datetime: value } };\n    }\n    node.warn('No known service mapping for entity domain: ' + domain);\n    return null;\n}\nreturn (msg.ha_entities || []).map(e => {\n    const call = buildServiceCall(e.entity_id, e.value);\n    if (!call) return null;\n    return { payload: { action: call.domain + '.' + call.service, target: call.target, data: call.data } };\n}).filter(Boolean);",
-    "outputs": 1,
-    "x": 480,
-    "y": 540,
-    "wires": [ [ "n_wdr_ha_set_state" ] ]
-  },
-  {
-    "id": "n_wdr_ha_set_state",
-    "type": "api-call-service",
-    "z": "tab_wherewhen_restore",
-    "name": "Call HA service (set helper entity)",
-    "server": "",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "",
-    "service": "",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "domainType": "msg.domain",
-    "serviceType": "msg.service",
-    "targetType": "msg.target",
-    "dataFieldType": "msg.payload",
-    "comment": "Same node config as every other flow's equivalent — msg.payload carries {action, target, data} directly. Must set the 'Server' field manually per install.",
-    "x": 220,
-    "y": 600,
-    "wires": [ [] ]
+    "wires": [
+      []
+    ]
   },
   {
     "id": "n_wdr_catch",
@@ -390,17 +462,94 @@
     "comment": "Fixes the gap flagged in PLAN.md §20's 'Known gap' note — this flow previously only handled its success path. Nothing in this flow has a native error output, so a catch node is what actually detects a real failure (a missing/corrupt manifest, a bad CSV parse, an InfluxDB write error). Scope null = catches any node on this tab. Given this is the highest-stakes flow in the project (§20's own framing), a caught failure here matters more than anywhere else — it means a restore didn't fully succeed and needs a human look, not silent trust.",
     "x": 300,
     "y": 680,
-    "wires": [ [ "n_wdr_job_failed" ] ]
+    "wires": [
+      [
+        "n_wdr_job_failed"
+      ]
+    ]
   },
   {
     "id": "n_wdr_job_failed",
     "type": "function",
     "z": "tab_wherewhen_restore",
     "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wdr_secrets');\nmsg.job_started_at = flow.get('wdr_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.ha_entities = [\n    { entity_id: 'input_boolean.lucius_wherewhen_restore_last_attempt_ok', value: 'off' },\n    { entity_id: 'input_datetime.lucius_wherewhen_restore_last_attempt', value: new Date().toISOString() },\n    { entity_id: 'input_text.lucius_wherewhen_restore_last_error', value: (source + ': ' + detail).slice(0, 250) }\n];\nnode.warn('wherewhen Data Restore failed: ' + source + ': ' + detail);\nreturn msg;",
+    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wdr_secrets');\nmsg.job_started_at = flow.get('wdr_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_restore,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_restore', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('wherewhen Data Restore failed: ' + source + ': ' + detail);\nreturn msg;",
     "outputs": 1,
     "x": 560,
     "y": 680,
-    "wires": [ [ "n_wdr_final_influx_write", "n_wdr_set_ha_entities" ] ]
+    "wires": [
+      [
+        "n_wdr_final_influx_write",
+        "n_wdr_sqlite_ensure_table"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_ensure_table",
+    "type": "function",
+    "z": "tab_wherewhen_restore",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 540,
+    "wires": [
+      [
+        "n_wdr_sqlite_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_wherewhen_restore",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 720,
+    "y": 540,
+    "wires": [
+      [
+        "n_wdr_sqlite_upsert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_wherewhen_restore",
+    "name": "SQLite: prep status UPSERT",
+    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 600,
+    "wires": [
+      [
+        "n_wdr_sqlite_upsert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_wdr_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_wherewhen_restore",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 720,
+    "y": 600,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   }
 ]

@@ -4,14 +4,18 @@
     "type": "tab",
     "label": "Lucius - Status Heartbeat",
     "disabled": false,
-    "info": "Runs every 15 minutes (PLAN.md \u00a715). Deliberately a fifth, dedicated flow rather than each sync flow pushing its own status inline \u2014 reads the HA helper entities the other three flows already maintain, computes one consolidated snapshot, pushes it to GoDaddy's new api/status_push.php (feeds status.php's HA/Node-RED/Analytics view), and writes the same snapshot to a new InfluxDB measurement (system_status_snapshot) per Ward's explicit request to keep it there for trend-watching.\n\nUNTESTED, same caveat as the other three flows \u2014 PLUS one piece of real, deliberate scope-narrowing worth knowing about: PLAN.md \u00a715 suggested this flow also query HA's own /api/config for HA version/uptime, to give the 'HA' category more than just a heartbeat. That's NOT implemented here \u2014 it would need either a Supervisor API token or a manually-managed long-lived access token, neither of which this project otherwise needs, and guessing at that auth mechanism without confirming it against a real HA instance felt like exactly the kind of unverified assumption this project has been burned by before (see PLAN.md \u00a72's require('fs') and /config lessons). Instead, the 'ha' category's only component (ha_core) uses this heartbeat's own successful execution as the signal \u2014 which is still real signal: if HA/Node-RED goes down, this flow stops running, ha_core goes overdue on status.php, and that overdue state IS the answer to 'is HA up.' Richer HA-native detail is a clearly flagged open follow-up, not a silent gap.\n\nAlso unverified: the 12 chained api-current-state nodes reading the other flows' helper entities via outputProperties (valueType 'entityState') \u2014 a reasonable, standard use of this palette's read capability, but this project has only used it for WRITES (api-call-service) so far, never reads."
+    "info": "Runs every 15 minutes (PLAN.md §15). Deliberately a fifth, dedicated flow rather than each sync flow pushing its own status inline — reads the shared job_status SQLite table every status-writing flow now maintains (Aug 2026 SQLite migration, see below), computes one consolidated snapshot, pushes it to GoDaddy's api/status_push.php (feeds status.php's HA/Node-RED/Analytics view), and writes the same snapshot to InfluxDB's system_status_snapshot measurement per Ward's explicit request to keep it there for trend-watching.\n\nSQLite MIGRATION (Aug 2026) — this flow used to chain 28 api-current-state HA reads (4 fields × 7 flows), one per helper entity, each needing its own manually-configured Server field. Replaced with a single SELECT * FROM job_status against /share/lucius_status.db (the same file every flow's job_success/job_failed nodes write to) — no HA connection needed for this flow at all anymore. dashboard.yaml's old Lovelace card, which showed 3 of these flows' HA entities directly, is retired along with the entities themselves — status.php and this flow's own InfluxDB write are now the only places this data lives.\n\nUNTESTED, same caveat as every flow in this project — PLUS one piece of real, deliberate scope-narrowing worth knowing about: PLAN.md §15 suggested this flow also query HA's own /api/config for HA version/uptime, to give the 'HA' category more than just a heartbeat. That's NOT implemented here — it would need either a Supervisor API token or a manually-managed long-lived access token, neither of which this project otherwise needs. Instead, the 'ha' category's only component (ha_core) uses this heartbeat's own successful execution as the signal — which is still real signal: if HA/Node-RED goes down, this flow stops running, ha_core goes overdue on status.php, and that overdue state IS the answer to 'is HA up.' Richer HA-native detail is a clearly flagged open follow-up, not a silent gap."
   },
   {
     "id": "n_sh_trigger",
     "type": "inject",
     "z": "tab_status_heartbeat",
     "name": "Every 15 minutes",
-    "props": [ { "p": "payload" } ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
     "repeat": "900",
     "crontab": "",
     "once": true,
@@ -21,7 +25,11 @@
     "payloadType": "date",
     "x": 150,
     "y": 60,
-    "wires": [ [ "n_sh_read_secrets_file" ] ]
+    "wires": [
+      [
+        "n_sh_read_secrets_file"
+      ]
+    ]
   },
   {
     "id": "n_sh_read_secrets_file",
@@ -37,7 +45,11 @@
     "allProps": false,
     "x": 410,
     "y": 60,
-    "wires": [ [ "n_sh_load_secrets" ] ]
+    "wires": [
+      [
+        "n_sh_load_secrets"
+      ]
+    ]
   },
   {
     "id": "n_sh_load_secrets",
@@ -48,7 +60,11 @@
     "outputs": 1,
     "x": 670,
     "y": 60,
-    "wires": [ [ "n_sh_write_start_http" ] ]
+    "wires": [
+      [
+        "n_sh_write_start_http"
+      ]
+    ]
   },
   {
     "id": "n_sh_write_start_http",
@@ -60,532 +76,26 @@
     "url": "",
     "x": 930,
     "y": 60,
-    "wires": [ [ "n_sh_read_oura_success" ] ]
-  },
-  {
-    "id": "n_sh_read_oura_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "halt_if": "",
-    "halt_if_type": "str",
-    "halt_if_compare": "is",
-    "entity_id": "input_datetime.lucius_oura_last_success",
-    "state_type": "str",
-    "state_location": "oura_last_success",
-    "override_topic": false,
-    "state_type_write": "msg",
-    "state_location_write": "oura_last_success",
-    "override_topic_write": false,
-    "override_payload": "msg",
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "outputProperties/state_location fields vary by palette version \u2014 confirm this writes to msg.oura_last_success in the editor after import.",
-    "x": 240,
-    "y": 140,
-    "wires": [ [ "n_sh_read_oura_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_oura_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_oura_last_attempt",
-    "state_type": "str",
-    "state_location": "oura_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 490,
-    "y": 140,
-    "wires": [ [ "n_sh_read_oura_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_oura_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_oura_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "oura_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 740,
-    "y": 140,
-    "wires": [ [ "n_sh_read_oura_error" ] ]
-  },
-  {
-    "id": "n_sh_read_oura_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_oura_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_oura_last_error",
-    "state_type": "str",
-    "state_location": "oura_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 990,
-    "y": 140,
-    "wires": [ [ "n_sh_read_godaddy_success" ] ]
-  },
-  {
-    "id": "n_sh_read_godaddy_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_godaddy_last_success",
-    "state_type": "str",
-    "state_location": "godaddy_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 240,
-    "y": 200,
-    "wires": [ [ "n_sh_read_godaddy_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_godaddy_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_godaddy_last_attempt",
-    "state_type": "str",
-    "state_location": "godaddy_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 490,
-    "y": 200,
-    "wires": [ [ "n_sh_read_godaddy_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_godaddy_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_godaddy_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "godaddy_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 740,
-    "y": 200,
-    "wires": [ [ "n_sh_read_godaddy_error" ] ]
-  },
-  {
-    "id": "n_sh_read_godaddy_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_godaddy_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_godaddy_last_error",
-    "state_type": "str",
-    "state_location": "godaddy_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 990,
-    "y": 200,
-    "wires": [ [ "n_sh_read_bodycomp_success" ] ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_bodycomp_last_success",
-    "state_type": "str",
-    "state_location": "bodycomp_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 240,
-    "y": 260,
-    "wires": [ [ "n_sh_read_bodycomp_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_bodycomp_last_attempt",
-    "state_type": "str",
-    "state_location": "bodycomp_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 490,
-    "y": 260,
-    "wires": [ [ "n_sh_read_bodycomp_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_bodycomp_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "bodycomp_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 740,
-    "y": 260,
-    "wires": [ [ "n_sh_read_bodycomp_error" ] ]
-  },
-  {
-    "id": "n_sh_read_bodycomp_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_bodycomp_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_bodycomp_last_error",
-    "state_type": "str",
-    "state_location": "bodycomp_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 990,
-    "y": 260,
-    "wires": [ [ "n_sh_read_mhi_success" ] ]
-  },
-  {
-    "id": "n_sh_read_mhi_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_mhi_last_success",
-    "state_type": "str",
-    "state_location": "mhi_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "Fulgrim validation pass (Aug 2026) \u2014 extends the existing 3-flow status heartbeat to also cover the 3 flows added this session (PLAN.md \u00a719/20). Same read-chain-then-pushComponent() pattern as oura/godaddy/bodycomp above, no new mechanism.",
-    "x": 240,
-    "y": 420,
-    "wires": [ [ "n_sh_read_mhi_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_mhi_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_mhi_last_attempt",
-    "state_type": "str",
-    "state_location": "mhi_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 370,
-    "y": 420,
-    "wires": [ [ "n_sh_read_mhi_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_mhi_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_mhi_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "mhi_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 500,
-    "y": 420,
-    "wires": [ [ "n_sh_read_mhi_error" ] ]
-  },
-  {
-    "id": "n_sh_read_mhi_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_mhi_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_mhi_last_error",
-    "state_type": "str",
-    "state_location": "mhi_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 630,
-    "y": 420,
-    "wires": [ [ "n_sh_read_wde_success" ] ]
-  },
-  {
-    "id": "n_sh_read_wde_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_export_last_success",
-    "state_type": "str",
-    "state_location": "wde_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 780,
-    "y": 420,
-    "wires": [ [ "n_sh_read_wde_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_wde_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_export_last_attempt",
-    "state_type": "str",
-    "state_location": "wde_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 940,
-    "y": 420,
-    "wires": [ [ "n_sh_read_wde_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_wde_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_wherewhen_export_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "wde_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 240,
-    "y": 480,
-    "wires": [ [ "n_sh_read_wde_error" ] ]
-  },
-  {
-    "id": "n_sh_read_wde_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_export_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_wherewhen_export_last_error",
-    "state_type": "str",
-    "state_location": "wde_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 400,
-    "y": 480,
-    "wires": [ [ "n_sh_read_wdr_success" ] ]
-  },
-  {
-    "id": "n_sh_read_wdr_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_restore_last_success",
-    "state_type": "str",
-    "state_location": "wdr_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 560,
-    "y": 480,
-    "wires": [ [ "n_sh_read_wdr_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_wdr_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_wherewhen_restore_last_attempt",
-    "state_type": "str",
-    "state_location": "wdr_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 730,
-    "y": 480,
-    "wires": [ [ "n_sh_read_wdr_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_wdr_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_wherewhen_restore_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "wdr_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 900,
-    "y": 480,
-    "wires": [ [ "n_sh_read_wdr_error" ] ]
-  },
-  {
-    "id": "n_sh_read_wdr_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_wherewhen_restore_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_wherewhen_restore_last_error",
-    "state_type": "str",
-    "state_location": "wdr_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 1070,
-    "y": 480,
-    "wires": [ [ "n_sh_read_ae_success" ] ]
-  },
-  {
-    "id": "n_sh_read_ae_success",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_success",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_analysis_engine_last_success",
-    "state_type": "str",
-    "state_location": "ae_last_success",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "comment": "Fulgrim Flux-engine pass (Aug 2026) — 7th flow, same read-chain-then-pushComponent() pattern as everything above.",
-    "x": 240,
-    "y": 540,
-    "wires": [ [ "n_sh_read_ae_attempt" ] ]
-  },
-  {
-    "id": "n_sh_read_ae_attempt",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_attempt",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_datetime.lucius_analysis_engine_last_attempt",
-    "state_type": "str",
-    "state_location": "ae_last_attempt",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 370,
-    "y": 540,
-    "wires": [ [ "n_sh_read_ae_ok" ] ]
-  },
-  {
-    "id": "n_sh_read_ae_ok",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_attempt_ok",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_boolean.lucius_analysis_engine_last_attempt_ok",
-    "state_type": "str",
-    "state_location": "ae_last_attempt_ok",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 500,
-    "y": 540,
-    "wires": [ [ "n_sh_read_ae_error" ] ]
-  },
-  {
-    "id": "n_sh_read_ae_error",
-    "type": "api-current-state",
-    "z": "tab_status_heartbeat",
-    "name": "Read lucius_analysis_engine_last_error",
-    "server": "",
-    "version": 3,
-    "outputs": 1,
-    "entity_id": "input_text.lucius_analysis_engine_last_error",
-    "state_type": "str",
-    "state_location": "ae_last_error",
-    "override_topic": false,
-    "entity_location": "data",
-    "override_data": "msg",
-    "x": 630,
-    "y": 540,
-    "wires": [ [ "n_sh_build_reports" ] ]
+    "wires": [
+      [
+        "n_sh_query_job_status_prep"
+      ]
+    ]
   },
   {
     "id": "n_sh_build_reports",
     "type": "function",
     "z": "tab_status_heartbeat",
-    "name": "Build reports array (7 flows + ha_core)",
-    "func": "function clean(v) { return (v && v !== 'unknown' && v !== 'unavailable') ? v : null; }\nconst now = new Date().toISOString();\nconst reports = [];\n\n// This flow's own successful execution IS the 'HA is up' signal \u2014 see\n// this tab's info note for why /api/config enrichment isn't implemented.\nreports.push({\n    category: 'ha', component: 'ha_core',\n    last_run_at: now, last_status: 'success',\n    expected_frequency_minutes: 15,\n    detail: 'Signal is this heartbeat itself running \u2014 real HA version/uptime not implemented yet, see flow tab info.'\n});\n\nfunction pushComponent(component, prefix, expectedMin) {\n    const ok = msg[prefix + '_last_attempt_ok'];\n    reports.push({\n        category: 'nodered',\n        component: component,\n        last_run_at: clean(msg[prefix + '_last_attempt']),\n        last_status: ok === 'on' ? 'success' : (ok === 'off' ? 'failed' : 'unknown'),\n        last_error: clean(msg[prefix + '_last_error']),\n        expected_frequency_minutes: expectedMin,\n    });\n}\npushComponent('oura_sync', 'oura', 240);\npushComponent('godaddy_pull', 'godaddy', 15);\npushComponent('bodycomp_import', 'bodycomp', 1440);\n// Fulgrim validation pass (Aug 2026) \u2014 the 3 flows added that session\n// (PLAN.md \u00a719/20). medical_history_import and wherewhen_restore are\n// manual/on-demand only (no real cadence), so expectedMin is null \u2014\n// overdue_info() in db.php already treats a null expected_frequency_minutes\n// as \"not schedule-based, nothing to compute\" rather than always-overdue.\n// wherewhen_export has a real weekly schedule (Sunday 3am) alongside its\n// manual trigger, so it gets a real expectedMin (7 days).\npushComponent('medical_history_import', 'mhi', null);\npushComponent('wherewhen_export', 'wde', 10080);\npushComponent('wherewhen_restore', 'wdr', null);\n// analysis_engine (Fulgrim Flux-engine pass, Aug 2026) \u2014 daily is its\n// tightest scheduled tier (weekly/monthly also run but daily is what\n// 'overdue' should track against; all-data is manual-only like the two\n// manual flows above and isn't reflected in this single expectedMin).\npushComponent('analysis_engine', 'ae', 1440);\n\nmsg.reports = reports;\nreturn msg;",
+    "name": "Build reports array (from SQLite job_status)",
+    "func": "function clean(v) { return (v && v !== 'unknown' && v !== 'unavailable') ? v : null; }\nconst now = new Date().toISOString();\nconst reports = [];\n\n// This flow's own successful execution IS the 'HA is up' signal — see\n// this tab's info note for why /api/config enrichment isn't implemented.\nreports.push({\n    category: 'ha', component: 'ha_core',\n    last_run_at: now, last_status: 'success',\n    expected_frequency_minutes: 15,\n    detail: 'Signal is this heartbeat itself running — real HA version/uptime not implemented yet, see flow tab info.'\n});\n\n// SQLite migration (Aug 2026) — replaces what used to be 28 chained\n// api-current-state HA reads (4 fields × 7 flows) with one SELECT * FROM\n// job_status, read once upstream (n_sh_query_job_status_db) and handed in\n// here as msg.payload (array of row objects). last_attempt_ok is a real\n// SQLite INTEGER (0/1) now, not HA's 'on'/'off' string.\nconst byJob = {};\n(msg.payload || []).forEach(r => { byJob[r.job_name] = r; });\n\nfunction pushComponent(component, jobName, expectedMin) {\n    const row = byJob[jobName];\n    const ok = row ? row.last_attempt_ok : null;\n    reports.push({\n        category: 'nodered',\n        component: component,\n        last_run_at: row ? clean(row.last_attempt) : null,\n        last_status: ok === 1 ? 'success' : (ok === 0 ? 'failed' : 'unknown'),\n        last_error: row ? clean(row.last_error) : null,\n        expected_frequency_minutes: expectedMin,\n    });\n}\npushComponent('oura_sync', 'oura_sync', 240);\npushComponent('godaddy_pull', 'godaddy_pull', 15);\npushComponent('bodycomp_import', 'bodycomp_import', 1440);\n// medical_history_import and wherewhen_restore are manual/on-demand only\n// (no real cadence), so expectedMin is null — overdue_info() in db.php\n// already treats a null expected_frequency_minutes as \"not schedule-based,\n// nothing to compute\" rather than always-overdue. wherewhen_export has a\n// real weekly schedule (Sunday 3am) alongside its manual trigger, so it\n// gets a real expectedMin (7 days). analysis_engine's daily tier (~12:15pm)\n// is its tightest scheduled cadence.\npushComponent('medical_history_import', 'medical_history_import', null);\npushComponent('wherewhen_export', 'wherewhen_export', 10080);\npushComponent('wherewhen_restore', 'wherewhen_restore', null);\npushComponent('analysis_engine', 'analysis_engine', 1440);\n\nmsg.reports = reports;\nreturn msg;",
     "outputs": 1,
     "x": 250,
     "y": 340,
-    "wires": [ [ "n_sh_prepare_push" ] ]
+    "wires": [
+      [
+        "n_sh_prepare_push"
+      ]
+    ]
   },
   {
     "id": "n_sh_prepare_push",
@@ -596,7 +106,11 @@
     "outputs": 1,
     "x": 500,
     "y": 340,
-    "wires": [ [ "n_sh_push_http" ] ]
+    "wires": [
+      [
+        "n_sh_push_http"
+      ]
+    ]
   },
   {
     "id": "n_sh_push_http",
@@ -608,7 +122,11 @@
     "url": "",
     "x": 760,
     "y": 340,
-    "wires": [ [ "n_sh_after_push" ] ]
+    "wires": [
+      [
+        "n_sh_after_push"
+      ]
+    ]
   },
   {
     "id": "n_sh_after_push",
@@ -619,7 +137,11 @@
     "outputs": 1,
     "x": 1010,
     "y": 340,
-    "wires": [ [ "n_sh_write_snapshot" ] ]
+    "wires": [
+      [
+        "n_sh_write_snapshot"
+      ]
+    ]
   },
   {
     "id": "n_sh_write_snapshot",
@@ -630,7 +152,14 @@
     "outputs": 2,
     "x": 250,
     "y": 400,
-    "wires": [ [ "n_sh_snapshot_http" ], [ "n_sh_job_outcome" ] ]
+    "wires": [
+      [
+        "n_sh_snapshot_http"
+      ],
+      [
+        "n_sh_job_outcome"
+      ]
+    ]
   },
   {
     "id": "n_sh_snapshot_http",
@@ -642,7 +171,9 @@
     "url": "",
     "x": 500,
     "y": 380,
-    "wires": [ [] ]
+    "wires": [
+      []
+    ]
   },
   {
     "id": "n_sh_job_outcome",
@@ -653,7 +184,11 @@
     "outputs": 1,
     "x": 500,
     "y": 440,
-    "wires": [ [ "n_sh_finish_http" ] ]
+    "wires": [
+      [
+        "n_sh_finish_http"
+      ]
+    ]
   },
   {
     "id": "n_sh_finish_http",
@@ -665,6 +200,79 @@
     "url": "",
     "x": 750,
     "y": 440,
-    "wires": [ [] ]
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "n_sh_query_job_status_prep",
+    "type": "function",
+    "z": "tab_status_heartbeat",
+    "name": "SQLite: prep job_status query",
+    "comment": "Ensures the table exists first (cheap no-op if it already does, same pattern as every status-writing flow) — this flow could plausibly be the very first thing that ever queries job_status on a fresh install, before any job has run to create it.",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 260,
+    "y": 460,
+    "wires": [
+      [
+        "n_sh_ensure_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sh_ensure_table_db",
+    "type": "sqlite",
+    "z": "tab_status_heartbeat",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 500,
+    "y": 460,
+    "wires": [
+      [
+        "n_sh_query_job_status_select_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_sh_query_job_status_select_prep",
+    "type": "function",
+    "z": "tab_status_heartbeat",
+    "name": "SQLite: prep SELECT * FROM job_status",
+    "func": "msg.topic = 'SELECT * FROM job_status';\nreturn msg;",
+    "outputs": 1,
+    "x": 260,
+    "y": 520,
+    "wires": [
+      [
+        "n_sh_query_job_status_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_sh_query_job_status_db",
+    "type": "sqlite",
+    "z": "tab_status_heartbeat",
+    "name": "sqlite: SELECT * FROM job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 500,
+    "y": 520,
+    "wires": [
+      [
+        "n_sh_build_reports"
+      ]
+    ]
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
   }
 ]
