@@ -14,11 +14,15 @@ function nav_class($key, $active) { return $key === $active ? 'nav-link active' 
 // index.php uses for its full banner runs here too, just checked for
 // non-emptiness — cheap enough at this app's scale not to bother with a
 // separate lightweight query path.
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/attention.php';
 $attentionNeeded = ($pdo instanceof PDO)
     ? (bool)(get_attention_items($pdo) || get_pending_event_count($pdo))
     : false;
 ?>
+<?php if (is_demo_mode()): ?>
+<div class="demo-banner">🎭 Demo mode — sample data only, nothing here is real. Changes you make may be reset at any time.</div>
+<?php endif; ?>
 <a class="attention-icon<?= $attentionNeeded ? ' attention-icon-active' : '' ?>"
    href="index.php#attention" title="<?= $attentionNeeded ? 'Something needs your attention' : 'Nothing needs attention right now' ?>">🔔</a>
 <nav class="mainnav">

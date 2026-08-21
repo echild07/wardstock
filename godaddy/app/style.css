@@ -425,6 +425,15 @@ textarea { resize: vertical; }
   margin-bottom: 24px;
 }
 .attention-banner .section-label { margin-bottom: 8px; }
+.demo-banner {
+  background: rgba(91, 140, 255, 0.12);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  text-align: center;
+}
 .attention-item {
   display: flex;
   justify-content: space-between;

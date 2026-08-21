@@ -1,14 +1,36 @@
 <?php
 require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/auth.php';
 
+// Demo mode (godaddy/demo/, Aug 2026 — "walk through the app without live
+// data"): same connection function every page already calls, just pointed
+// at a separate, fully isolated demo database when $_SESSION['demo_mode']
+// is set. No new code paths for pages to know about — is_demo_mode() is
+// the only new thing they'd ever need, and most never will. Real writes
+// ARE allowed in demo mode (this is a real PDO connection, not a no-op
+// wrapper — deliberately simple over clever, see demo/README.md) since
+// it's a completely separate database from the live one; demo/
+// generate_demo_data.php is the reset mechanism for stale/messy demo data,
+// not write-blocking at the connection layer.
 function get_db() {
     static $pdo = null;
-    if ($pdo === null) {
-        $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4';
-        $pdo = new PDO($dsn, DB_USER, DB_PASS, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]);
+    static $pdoIsDemo = null;
+    $demo = is_demo_mode() && defined('DEMO_DB_NAME') && DEMO_DB_NAME !== '';
+    if ($pdo === null || $pdoIsDemo !== $demo) {
+        if ($demo) {
+            $dsn = 'mysql:host=' . DEMO_DB_HOST . ';dbname=' . DEMO_DB_NAME . ';charset=utf8mb4';
+            $pdo = new PDO($dsn, DEMO_DB_USER, DEMO_DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]);
+        } else {
+            $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4';
+            $pdo = new PDO($dsn, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]);
+        }
+        $pdoIsDemo = $demo;
     }
     return $pdo;
 }

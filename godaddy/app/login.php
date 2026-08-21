@@ -14,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user = $stmt->fetch();
     if ($user && password_verify($password, $user['password_hash'])) {
         session_regenerate_id(true);
+        unset($_SESSION['demo_mode']); // in case this browser had a demo session going (demo/index.php)
         $_SESSION['user_id'] = $user['id'];
         header('Location: index.php');
         exit;
@@ -45,6 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <label>Password <input type="password" name="password" required></label>
     <button type="submit">Log in</button>
   </form>
+  <?php if (defined('DEMO_DB_NAME') && DEMO_DB_NAME !== ''): ?>
+  <p class="hint" style="margin-top:16px;"><a href="demo/">🎭 View interactive demo</a> — click through the app with sample data, no login needed</p>
+  <?php endif; ?>
   <p class="hint" style="margin-top:24px;"><a href="privacy.php">Privacy Policy</a> · <a href="terms.php">Terms of Service</a> · <a href="about.php">About</a> · <a href="marketing.html">LeeWard / WardStock flyer</a></p>
   <?php
     // Version on the login page itself (Ward, Aug 2026 — "so you can

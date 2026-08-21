@@ -19,6 +19,17 @@ function is_logged_in() {
     return !empty($_SESSION['user_id']);
 }
 
+// Demo mode (godaddy/demo/ — kiosk-style walkthrough with synthetic data,
+// no real credentials needed). Deliberately does NOT call start_session()
+// itself — api/*.php endpoints call get_db() too, via a bearer token, and
+// have never started a session; this must stay a no-op for them rather
+// than force-starting an unused session on every machine-to-machine call.
+// Every human-facing page already calls start_session() (via require_login()
+// or the demo entry point itself) before this is ever checked.
+function is_demo_mode() {
+    return session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_mode']);
+}
+
 function require_login() {
     if (!is_logged_in()) {
         header('Location: login.php');
