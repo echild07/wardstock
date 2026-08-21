@@ -88,94 +88,22 @@ function av_trend_svg($series, $decimals = 1) {
     return ob_get_clean();
 }
 
-// Converts an hours-since-noon offset (the Flux engine's storage shape
-// for bedtime/wake, chosen specifically to avoid the midnight-wraparound
-// a raw 0-24 clock hour would hit — see analysis_engine_flow.json's own
-// comment on this) back into a real clock-time label for display.
-function fmt_clock_from_noon_offset($h) {
-    if ($h === null) return '—';
-    $actualHour = fmod($h + 12, 24);
-    if ($actualHour < 0) $actualHour += 24;
-    $hh = (int)floor($actualHour);
-    $mm = (int)round(($actualHour - $hh) * 60);
-    if ($mm == 60) { $hh = ($hh + 1) % 24; $mm = 0; }
-    $period = $hh < 12 ? 'AM' : 'PM';
-    $hh12 = $hh % 12; if ($hh12 == 0) $hh12 = 12;
-    return sprintf('%d:%02d %s', $hh12, $mm, $period);
-}
-
-// Range/floating-bar chart — one vertical bar per day, spanning from
-// $keyA's value to $keyB's value, rather than two separate polylines.
-// Built specifically for bedtime/wake-time trend (Ward, Aug 2026 —
-// "the two line graphs don't look good... a better chart to show the
-// start and end time as if they were connected together"): each night's
-// bedtime and wake time are one connected span, not two independent
-// trends that happen to share an x-axis. Y-axis values are still plain
-// numbers internally (hours-since-noon for this analysis) but labeled
-// with $labelFn if given, so the axis reads as real clock times instead
-// of a raw offset number.
-function av_range_bar_svg($series, $keyA, $keyB, $labelFn = null) {
-    if (count($series) < 1) return null;
-    $fmt = $labelFn ?: fn($v) => fmt_num($v, 1);
-    $allValues = array_merge(array_map(fn($p) => (float)$p[$keyA], $series), array_map(fn($p) => (float)$p[$keyB], $series));
-    $minV = min($allValues); $maxV = max($allValues);
-    $pad = max(0.5, ($maxV - $minV) * 0.15);
-    $minV -= $pad; $maxV += $pad;
-    if ($maxV == $minV) { $maxV += 1; $minV -= 1; }
-
-    $firstT = strtotime($series[0]['date']);
-    $lastT = strtotime($series[count($series) - 1]['date']);
-    $span = max(1, $lastT - $firstT);
-
-    $chartW = 640; $chartH = 240;
-    $padL = 60; $padR = 16; $padT = 16; $padB = 30;
-    $plotW = $chartW - $padL - $padR;
-    $plotH = $chartH - $padT - $padB;
-    // Bars need real screen width, not a hairline — same idea as a
-    // candlestick chart. Scale down as more days are packed in.
-    $barW = count($series) > 1 ? max(3, min(14, $plotW / count($series) * 0.6)) : 14;
-
-    // A closure, not a named function — a named `function yFor(...)` here
-    // would be declared in PHP's global scope the first time this runs
-    // and fatal-error with "Cannot redeclare" on a second call in the
-    // same request (this function is only called once per page today,
-    // but that's a fragile thing to rely on).
-    $yFor = fn($v) => $padT + $plotH * (1 - ($v - $minV) / ($maxV - $minV));
-
-    ob_start();
-    ?>
-    <svg viewBox="0 0 <?= $chartW ?> <?= $chartH ?>" class="trend-chart" xmlns="http://www.w3.org/2000/svg">
-      <line x1="<?= $padL ?>" y1="<?= $padT ?>" x2="<?= $padL ?>" y2="<?= $chartH - $padB ?>" class="chart-axis" />
-      <line x1="<?= $padL ?>" y1="<?= $chartH - $padB ?>" x2="<?= $chartW - $padR ?>" y2="<?= $chartH - $padB ?>" class="chart-axis" />
-      <text x="<?= $padL - 6 ?>" y="<?= $padT + 4 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars($fmt($maxV)) ?></text>
-      <text x="<?= $padL - 6 ?>" y="<?= $chartH - $padB + 4 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars($fmt($minV)) ?></text>
-      <text x="<?= $padL ?>" y="<?= $chartH - $padB + 18 ?>" class="chart-label"><?= htmlspecialchars(date('M j', $firstT)) ?></text>
-      <text x="<?= $chartW - $padR ?>" y="<?= $chartH - $padB + 18 ?>" class="chart-label" text-anchor="end"><?= htmlspecialchars(date('M j', $lastT)) ?></text>
-      <?php foreach ($series as $p):
-          $t = strtotime($p['date']);
-          $x = round($padL + $plotW * (($t - $firstT) / $span), 1);
-          $yA = round($yFor((float)$p[$keyA]), 1);
-          $yB = round($yFor((float)$p[$keyB]), 1);
-          $yTop = min($yA, $yB); $yBottom = max($yA, $yB);
-          $dayLabel = htmlspecialchars(date('M j', $t));
-      ?>
-        <rect x="<?= round($x - $barW / 2, 1) ?>" y="<?= $yTop ?>" width="<?= round($barW, 1) ?>" height="<?= max(1, round($yBottom - $yTop, 1)) ?>" class="av-range-bar">
-          <title><?= $dayLabel ?>: <?= htmlspecialchars($fmt($p[$keyA])) ?> — <?= htmlspecialchars($fmt($p[$keyB])) ?></title>
-        </rect>
-        <circle cx="<?= $x ?>" cy="<?= $yA ?>" r="3" class="chart-point"><title><?= $dayLabel ?> — <?= htmlspecialchars($fmt($p[$keyA])) ?></title></circle>
-        <circle cx="<?= $x ?>" cy="<?= $yB ?>" r="3" class="chart-point-diastolic"><title><?= $dayLabel ?> — <?= htmlspecialchars($fmt($p[$keyB])) ?></title></circle>
-      <?php endforeach; ?>
-    </svg>
-    <?php
-    return ob_get_clean();
-}
-
 // Full trendResult block (chart + stat row) — the shape every single-
 // series trend analysis (#1-4, 14, and each sub-series of #5/6/11)
 // returns from the engine's own trendResult() helper.
 function av_trend_block($trend, $unit = '', $decimals = 1) {
+    // boundedTrendResult() (Ward, Aug 2026 — real observed bug: this chart
+    // showing -1.46 to 11.77 hours) drops physically-impossible values
+    // instead of charting them, and reports how many via excluded_count.
+    // Surface that even when it leaves nothing chartable, rather than
+    // reporting the same "no data" a genuinely empty result would.
+    $excludedNote = '';
+    if ($trend && !empty($trend['excluded_count'])) {
+        $samples = array_map(fn($e) => fmt_num($e['value'] ?? null, $decimals) . htmlspecialchars($unit) . ' at ' . htmlspecialchars($e['time'] ?? ''), $trend['excluded_sample'] ?? []);
+        $excludedNote = '<p class="hint">⚠ ' . (int)$trend['excluded_count'] . ' value(s) excluded — outside a physically possible range for this measure' . ($samples ? ' (e.g. ' . implode('; ', $samples) . ')' : '') . '. Not shown in the chart or the stats below; export this analysis’s raw data, or run wherewhen — Data Export and check InfluxDB directly, to track down why.</p>';
+    }
     if (!$trend || empty($trend['series'])) {
-        return '<p class="hint">No data in this result yet.</p>';
+        return $excludedNote ?: '<p class="hint">No data in this result yet.</p>';
     }
     // av_trend_svg() only returns null on a truly empty series, already
     // ruled out above — bars, unlike the line chart this used to be, are
@@ -191,7 +119,7 @@ function av_trend_block($trend, $unit = '', $decimals = 1) {
     $html .= '<div class="report-stat"><span class="report-num">' . htmlspecialchars($slopeLabel) . '</span><span class="report-label">Trend</span></div>';
     $html .= '<div class="report-stat"><span class="report-num">' . (int)($trend['count'] ?? count($trend['series'])) . '</span><span class="report-label">Points</span></div>';
     $html .= '</div>';
-    return $html;
+    return $html . $excludedNote;
 }
 
 // Correlation block — {label, paired_days, correlation, points}.
@@ -243,36 +171,23 @@ function av_table($headers, $rows) {
     return $html . '</tbody></table>';
 }
 
-// Hypnogram — a horizontal timeline of colored segments, one per 15-min
-// bucket. Not an SVG line chart (nothing to plot on a y-axis — stage is
-// categorical) so this is its own small renderer.
-function av_hypnogram_svg($buckets) {
-    if (!$buckets) return null;
-    $stageColor = ['deep' => '#3f5f9a', 'light' => '#5b8cff', 'rem' => '#9a7fdb', 'awake' => '#a13f3f', 'unknown' => '#3a4048'];
-    $stageLabel = ['deep' => 'Deep', 'light' => 'Light', 'rem' => 'REM', 'awake' => 'Awake', 'unknown' => 'Unknown'];
-    $n = count($buckets);
-    $chartW = 640; $chartH = 70; $segW = $chartW / max(1, $n);
-    ob_start();
-    ?>
-    <svg viewBox="0 0 <?= $chartW ?> <?= $chartH ?>" class="trend-chart" xmlns="http://www.w3.org/2000/svg">
-      <?php foreach ($buckets as $i => $b):
-          $stage = $b['stage'] ?? 'unknown';
-          $color = $stageColor[$stage] ?? $stageColor['unknown'];
-      ?>
-        <rect x="<?= round($i * $segW, 1) ?>" y="10" width="<?= ceil($segW) ?>" height="30" fill="<?= $color ?>">
-          <title><?= htmlspecialchars(date('g:i A', strtotime($b['time']))) ?>: <?= htmlspecialchars($stageLabel[$stage] ?? $stage) ?></title>
-        </rect>
-      <?php endforeach; ?>
-      <text x="0" y="58" class="chart-label"><?= htmlspecialchars(date('g:i A', strtotime($buckets[0]['time']))) ?></text>
-      <text x="<?= $chartW ?>" y="58" class="chart-label" text-anchor="end"><?= htmlspecialchars(date('g:i A', strtotime($buckets[$n - 1]['time']))) ?></text>
-    </svg>
-    <p class="hint">
-      <?php foreach ($stageColor as $stage => $color): if ($stage === 'unknown') continue; ?>
-        <span style="display:inline-block;width:10px;height:10px;background:<?= $color ?>;border-radius:2px;margin-right:4px;"></span><?= htmlspecialchars($stageLabel[$stage]) ?> &nbsp;
-      <?php endforeach; ?>
-    </p>
-    <?php
-    return ob_get_clean();
+// Hypnogram legend — just the color key. The timeline itself (the
+// colored-segment SVG, tooltips, and start/end clock labels) is built
+// client-side now, in the <script> block at the bottom of analysis.php —
+// see that case in render_analysis_result() for why: bucket times are
+// raw UTC, and only the browser actually knows what timezone the person
+// looking at the page is in (Ward, Aug 2026 — hardcoding a server-side
+// Eastern conversion would be wrong the moment this is viewed from
+// anywhere else; JS's own Date object already resolves UTC to whatever
+// timezone the browser/OS is set to, for free, no library needed).
+function av_hypnogram_legend() {
+    $stageColor = ['deep' => '#3f5f9a', 'light' => '#5b8cff', 'rem' => '#9a7fdb', 'awake' => '#a13f3f'];
+    $stageLabel = ['deep' => 'Deep', 'light' => 'Light', 'rem' => 'REM', 'awake' => 'Awake'];
+    $html = '<p class="hint">';
+    foreach ($stageColor as $stage => $color) {
+        $html .= '<span style="display:inline-block;width:10px;height:10px;background:' . $color . ';border-radius:2px;margin-right:4px;"></span>' . htmlspecialchars($stageLabel[$stage]) . ' &nbsp;';
+    }
+    return $html . '</p>';
 }
 
 // ---- the dispatcher ----
@@ -437,23 +352,33 @@ function render_analysis_result($key, $result) {
 
         case 'bedtime_wake_time_trend':
             // Range bar, not two lines (Ward, Aug 2026) — each night's
-            // bedtime/wake reads as one connected span. Values are stored
-            // as hours-since-noon (avoids the midnight-wraparound a raw
-            // clock hour hits); fmt_clock_from_noon_offset() converts
-            // back to a real time label for the axis/tooltips/stats.
-            $svg = av_range_bar_svg($result['series'] ?? [], 'bedtime_offset', 'wake_offset', 'fmt_clock_from_noon_offset');
-            $html = $svg ? '<div class="report-box">' . $svg . '</div>' : '<p class="hint">Not enough nights in this period yet.</p>';
-            $html .= av_stat_row([
-                ['Avg bedtime', fmt_clock_from_noon_offset($result['avg_bedtime_offset'] ?? null)],
-                ['Avg wake time', fmt_clock_from_noon_offset($result['avg_wake_offset'] ?? null)],
-            ]);
+            // bedtime/wake reads as one connected span. Built client-side
+            // now (see the <script> block at the bottom of analysis.php):
+            // the engine sends raw UTC bedtime_time/wake_time timestamps,
+            // and only the browser actually knows what timezone the
+            // person viewing the page is in — a server-side conversion
+            // (Eastern, hardcoded) was tried first and was the wrong
+            // call (Ward, Aug 2026: "shouldn't it be in the browser's
+            // timezone... if everything is coming in GMT, the browser's
+            // region should be what's used"). PHP just passes the raw
+            // series through as JSON; JS does the hours-since-noon
+            // encoding, the day grouping, and the SVG drawing, all using
+            // its own Date object's normal (browser-local) behavior.
+            $rawSeries = array_values(array_filter($result['series'] ?? [], fn($p) => !empty($p['bedtime_time']) && !empty($p['wake_time'])));
+            $oldFormat = !$rawSeries && !empty($result['series']);
+            $html = '<div class="report-box js-bedtime-chart" data-points=\'' . htmlspecialchars(json_encode($rawSeries), ENT_QUOTES) . '\' data-old-format="' . ($oldFormat ? '1' : '0') . '"><p class="hint">Loading chart…</p></div>';
+            $html .= '<div class="report-stats js-bedtime-stats"></div>';
             if (!empty($result['note'])) $html .= '<p class="hint">' . htmlspecialchars($result['note']) . '</p>';
             return $html;
 
         case 'sleep_stage_hypnogram':
-            $svg = av_hypnogram_svg($result['buckets'] ?? []);
-            $html = $svg ? '<div class="report-box">' . $svg . '</div>' : '<p class="hint">' . htmlspecialchars($result['note'] ?? 'No decomposed sleep-stage data yet.') . '</p>';
-            if ($svg && !empty($result['note'])) $html .= '<p class="hint">' . htmlspecialchars($result['note']) . '</p>';
+            // Same reasoning as bedtime/wake above — bucket times are
+            // raw UTC, timezone conversion happens client-side.
+            $buckets = $result['buckets'] ?? [];
+            $html = $buckets
+                ? '<div class="report-box js-hypnogram-chart" data-buckets=\'' . htmlspecialchars(json_encode($buckets), ENT_QUOTES) . '\'><p class="hint">Loading chart…</p></div>' . av_hypnogram_legend()
+                : '<p class="hint">' . htmlspecialchars($result['note'] ?? 'No decomposed sleep-stage data yet.') . '</p>';
+            if ($buckets && !empty($result['note'])) $html .= '<p class="hint">' . htmlspecialchars($result['note']) . '</p>';
             return $html;
 
         default:

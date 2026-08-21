@@ -1,487 +1,487 @@
 [
-  {
-    "id": "tab_wherewhen_export",
-    "type": "tab",
-    "label": "wherewhen - Data Export",
-    "disabled": false,
-    "info": "PLAN.md §20 — backs up everything InfluxDB holds, so a wiped/migrated HA install isn't a total loss. Manual trigger, plus a weekly schedule (Sunday 3am) so a usable backup exists even if Ward forgets to run one by hand — the whole value of a backup depends on how stale it is when actually needed.\n\nEnumerates InfluxDB measurements DYNAMICALLY via Flux's `schema.measurements()` — not a hardcoded list — so newly-added measurements (this project's data model has been growing quickly) get picked up automatically without this flow needing an edit every time. For each measurement, runs a full-range Flux query and writes InfluxDB's own CSV response body directly to /share/lucius_data_backup/<timestamp>/<measurement>.csv — no manual CSV conversion, InfluxDB's query API already returns annotated CSV natively (Content-Type: application/vnd.flux request, CSV response by default). Also writes a manifest.json (measurement list + row counts) for the Restore flow's verify mode to check against.\n\nFirst place any of this project's flows queries InfluxDB (every other flow only ever writes to /api/v2/write) — genuinely new API surface, worth confirming the /api/v2/query request shape works as expected on first real run.\n\nUNTESTED — built from InfluxDB v2's documented Flux/query API, never run against a live InfluxDB instance."
-  },
-  {
-    "id": "n_wde_trigger_manual",
-    "type": "inject",
-    "z": "tab_wherewhen_export",
-    "name": "Manual trigger",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "repeat": "",
-    "crontab": "",
-    "once": false,
-    "onceDelay": 0.1,
-    "topic": "",
-    "payload": "",
-    "payloadType": "date",
-    "x": 150,
-    "y": 60,
-    "wires": [
-      [
-        "n_wde_read_secrets_file"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_trigger_weekly",
-    "type": "inject",
-    "z": "tab_wherewhen_export",
-    "name": "Weekly — Sunday 3am",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "repeat": "",
-    "crontab": "0 3 * * 0",
-    "once": false,
-    "onceDelay": 0.1,
-    "topic": "",
-    "payload": "",
-    "payloadType": "date",
-    "x": 150,
-    "y": 100,
-    "wires": [
-      [
-        "n_wde_read_secrets_file"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_read_secrets_file",
-    "type": "file in",
-    "z": "tab_wherewhen_export",
-    "name": "Read /share/lucius_secrets.json",
-    "filename": "/share/lucius_secrets.json",
-    "filenameType": "str",
-    "format": "utf8",
-    "chunk": false,
-    "sendError": false,
-    "encoding": "none",
-    "allProps": false,
-    "x": 400,
-    "y": 80,
-    "wires": [
-      [
-        "n_wde_load_secrets"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_load_secrets",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Load secrets + start job log + backup dir",
-    "func": "let secrets;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    node.error('Could not parse secrets file: ' + e.message, msg);\n    return null;\n}\nmsg.secrets = secrets;\nmsg.job_started_at = new Date().toISOString();\n// Timestamped per run (PLAN.md §20) — keeps every run's files separate,\n// exact format YYYY-MM-DD_HHmmss so it sorts correctly as plain text too.\nconst d = new Date();\nconst pad = n => String(n).padStart(2, '0');\nconst stamp = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());\nmsg.backup_dir = '/share/lucius_data_backup/' + stamp;\nflow.set('wde_secrets', secrets);\nflow.set('wde_job_started_at', msg.job_started_at);\nflow.set('wde_backup_dir', msg.backup_dir);\n\nmsg.payload = 'mkdir -p ' + msg.backup_dir;\nreturn msg;",
-    "outputs": 1,
-    "x": 680,
-    "y": 80,
-    "wires": [
-      [
-        "n_wde_mkdir"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_mkdir",
-    "type": "exec",
-    "z": "tab_wherewhen_export",
-    "command": "",
-    "addpay": "payload",
-    "append": "",
-    "useSpawn": "false",
-    "timer": "10",
-    "winHide": false,
-    "oldrc": false,
-    "name": "mkdir -p this run's backup_dir",
-    "x": 950,
-    "y": 80,
-    "wires": [
-      [
-        "n_wde_write_start_influx"
-      ],
-      [
-        "n_wde_write_start_influx"
-      ],
-      []
-    ]
-  },
-  {
-    "id": "n_wde_write_start_influx",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Prepare start-point write",
-    "func": "const secrets = flow.get('wde_secrets');\nconst nowNs = Date.now() * 1000000;\nmsg.url = secrets.influxdb_url + '/api/v2/write?org=' + secrets.influxdb_org + '&bucket=' + secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = 'sync_job_runs,job_name=wherewhen_export,status=started value=1 ' + nowNs;\nreturn msg;",
-    "outputs": 1,
-    "x": 400,
-    "y": 160,
-    "wires": [
-      [
-        "n_wde_write_start_http"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_write_start_http",
-    "type": "http request",
-    "z": "tab_wherewhen_export",
-    "name": "InfluxDB: write start point",
-    "method": "use",
-    "ret": "txt",
-    "url": "",
-    "x": 650,
-    "y": 160,
-    "wires": [
-      [
-        "n_wde_list_measurements_prep"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_list_measurements_prep",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Build schema.measurements() Flux query",
-    "func": "// First InfluxDB QUERY this project's flows have ever made (every other\n// flow only ever writes). Content-Type application/vnd.flux + raw Flux\n// text body is the documented InfluxDB v2 request shape for this — the\n// response is CSV by default, no separate 'give me CSV' step needed.\nconst secrets = flow.get('wde_secrets');\nconst flux = 'import \"influxdata/influxdb/schema\"\\nschema.measurements(bucket: \"' + secrets.influxdb_bucket + '\")';\nmsg.url = secrets.influxdb_url + '/api/v2/query?org=' + encodeURIComponent(secrets.influxdb_org);\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'application/vnd.flux', 'Accept': 'application/csv' };\nmsg.payload = flux;\nreturn msg;",
-    "outputs": 1,
-    "x": 200,
-    "y": 220,
-    "wires": [
-      [
-        "n_wde_list_measurements_http"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_list_measurements_http",
-    "type": "http request",
-    "z": "tab_wherewhen_export",
-    "name": "InfluxDB: query measurement list",
-    "method": "use",
-    "ret": "txt",
-    "url": "",
-    "x": 470,
-    "y": 220,
-    "wires": [
-      [
-        "n_wde_parse_measurement_list"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_parse_measurement_list",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Parse measurement names from CSV response",
-    "func": "// InfluxDB's annotated CSV: lines starting with # are metadata\n// (#datatype/#group/#default), then one real header row (starting with\n// the literal column name, e.g. ',result,table,_value'), then data rows.\n// schema.measurements() returns one column, _value, one measurement name\n// per row — this parse is much simpler than the general case Restore's\n// CSV parser has to handle (see that flow's own function for the fuller\n// version of this same logic).\nconst text = msg.payload || '';\nconst lines = text.split('\\n').map(l => l.trim()).filter(Boolean);\nconst headerLine = lines.find(l => !l.startsWith('#'));\nif (!headerLine) {\n    msg.measurements = [];\n} else {\n    const cols = headerLine.split(',');\n    const valueIdx = cols.indexOf('_value');\n    const dataLines = lines.slice(lines.indexOf(headerLine) + 1).filter(l => !l.startsWith('#'));\n    msg.measurements = dataLines.map(l => l.split(',')[valueIdx]).filter(Boolean);\n}\nflow.set('wde_measurements', msg.measurements);\nif (!msg.measurements.length) {\n    node.warn('No measurements found in bucket — nothing to export this run (empty bucket, or the schema.measurements() query itself needs checking on first real run).');\n    return [null, msg];\n}\nreturn [msg, null];",
-    "outputs": 2,
-    "x": 200,
-    "y": 280,
-    "wires": [
-      [
-        "n_wde_split_measurements"
-      ],
-      [
-        "n_wde_write_manifest"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_split_measurements",
-    "type": "split",
-    "z": "tab_wherewhen_export",
-    "name": "Split: one message per measurement",
-    "splt": "\\n",
-    "spltType": "str",
-    "arraySplt": 1,
-    "arraySpltType": "len",
-    "stream": false,
-    "addname": "",
-    "property": "measurements",
-    "x": 480,
-    "y": 280,
-    "wires": [
-      [
-        "n_wde_prep_measurement_query"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_prep_measurement_query",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Build full-range Flux query for this measurement",
-    "func": "const secrets = flow.get('wde_secrets');\nconst measurement = msg.payload; // one measurement name, from the split\nmsg.measurement_name = measurement;\nconst flux = 'from(bucket: \"' + secrets.influxdb_bucket + '\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"' + measurement.replace(/\"/g, '\\\\\"') + '\")';\nmsg.url = secrets.influxdb_url + '/api/v2/query?org=' + encodeURIComponent(secrets.influxdb_org);\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'application/vnd.flux', 'Accept': 'application/csv' };\nmsg.payload = flux;\nreturn msg;",
-    "outputs": 1,
-    "x": 730,
-    "y": 280,
-    "wires": [
-      [
-        "n_wde_query_measurement_http"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_query_measurement_http",
-    "type": "http request",
-    "z": "tab_wherewhen_export",
-    "name": "InfluxDB: query this measurement (full range)",
-    "method": "use",
-    "ret": "txt",
-    "url": "",
-    "x": 990,
-    "y": 280,
-    "wires": [
-      [
-        "n_wde_prep_csv_write"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_prep_csv_write",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Prepare CSV file write",
-    "func": "const backupDir = flow.get('wde_backup_dir');\nmsg.filename = backupDir + '/' + msg.measurement_name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.csv';\nmsg.row_count = (msg.payload.match(/\\n/g) || []).length; // rough, for the manifest — not exact (header/annotation lines included)\nreturn msg;",
-    "outputs": 1,
-    "x": 200,
-    "y": 340,
-    "wires": [
-      [
-        "n_wde_write_csv_file"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_write_csv_file",
-    "type": "file",
-    "z": "tab_wherewhen_export",
-    "name": "Write measurement CSV (msg.filename = dynamic path)",
-    "filename": "",
-    "filenameType": "msg",
-    "appendNewline": false,
-    "createDir": true,
-    "overwriteFile": "true",
-    "encoding": "none",
-    "x": 480,
-    "y": 340,
-    "wires": [
-      [
-        "n_wde_join_measurements"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_join_measurements",
-    "type": "join",
-    "z": "tab_wherewhen_export",
-    "name": "Join: wait for all measurement writes",
-    "mode": "auto",
-    "build": "array",
-    "property": "measurement_name",
-    "propertyType": "msg",
-    "key": "topic",
-    "joiner": "\\n",
-    "joinerType": "str",
-    "accumulate": false,
-    "timeout": "",
-    "count": "",
-    "reduceRight": false,
-    "comment": "Paired with n_wde_split_measurements via msg.parts (mode: auto).",
-    "x": 730,
-    "y": 340,
-    "wires": [
-      [
-        "n_wde_write_manifest"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_write_manifest",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Build + write manifest.json",
-    "func": "// Fires from two paths: the normal one (after all measurement CSVs are\n// written) and the empty-bucket path (n_wde_parse_measurement_list's\n// second output, nothing to split/join over). Either way, a manifest\n// always gets written so Restore's verify mode always has something to\n// check against, even for a legitimately-empty backup.\nconst measurements = flow.get('wde_measurements') || [];\nconst backupDir = flow.get('wde_backup_dir');\nmsg.manifest = {\n    exported_at: new Date().toISOString(),\n    measurement_count: measurements.length,\n    measurements: measurements\n};\nmsg.filename = backupDir + '/manifest.json';\nmsg.payload = JSON.stringify(msg.manifest, null, 2);\nmsg.secrets = flow.get('wde_secrets');\nmsg.job_started_at = flow.get('wde_job_started_at');\nreturn msg;",
-    "outputs": 1,
-    "x": 480,
-    "y": 400,
-    "wires": [
-      [
-        "n_wde_write_manifest_file"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_write_manifest_file",
-    "type": "file",
-    "z": "tab_wherewhen_export",
-    "name": "Write manifest.json (msg.filename = dynamic path)",
-    "filename": "",
-    "filenameType": "msg",
-    "appendNewline": false,
-    "createDir": true,
-    "overwriteFile": "true",
-    "encoding": "none",
-    "x": 730,
-    "y": 400,
-    "wires": [
-      [
-        "n_wde_job_success"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_job_success",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Log success + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst measurements = flow.get('wde_measurements') || [];\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=success measurement_count=' + measurements.length + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_export', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nif (!msg.secrets) msg.secrets = flow.get('wde_secrets');\nreturn msg;",
-    "outputs": 1,
-    "x": 400,
-    "y": 460,
-    "wires": [
-      [
-        "n_wde_final_influx_write",
-        "n_wde_sqlite_ensure_table"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_final_influx_write",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Prepare finish-point write",
-    "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
-    "outputs": 1,
-    "x": 660,
-    "y": 460,
-    "wires": [
-      [
-        "n_wde_final_influx_http"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_final_influx_http",
-    "type": "http request",
-    "z": "tab_wherewhen_export",
-    "name": "InfluxDB: write finish point",
-    "method": "use",
-    "ret": "txt",
-    "url": "",
-    "x": 910,
-    "y": 460,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "n_wde_catch",
-    "type": "catch",
-    "z": "tab_wherewhen_export",
-    "name": "Catch any flow error (job_failed gap, Aug 2026)",
-    "scope": null,
-    "uncaught": false,
-    "comment": "Fixes the gap flagged in PLAN.md §20's 'Known gap' note — this flow previously only handled its success path. Nothing in this flow has a native error output (all function/file/exec nodes here are single-output on their main path), so a catch node is what actually detects a real failure (a bad Flux query, disk write error, malformed InfluxDB CSV response). Scope null = catches any node on this tab.",
-    "x": 300,
-    "y": 620,
-    "wires": [
-      [
-        "n_wde_job_failed"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_job_failed",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "Log failure + update HA status",
-    "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wde_secrets');\nmsg.job_started_at = flow.get('wde_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_export', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('wherewhen Data Export failed: ' + source + ': ' + detail);\nreturn msg;",
-    "outputs": 1,
-    "x": 560,
-    "y": 620,
-    "wires": [
-      [
-        "n_wde_final_influx_write",
-        "n_wde_sqlite_ensure_table"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_sqlite_ensure_table",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "SQLite: ensure job_status table exists",
-    "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
-    "outputs": 1,
-    "x": 400,
-    "y": 520,
-    "wires": [
-      [
-        "n_wde_sqlite_ensure_table_db"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_sqlite_ensure_table_db",
-    "type": "sqlite",
-    "z": "tab_wherewhen_export",
-    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
-    "mydb": "cfg_lucius_status_db",
-    "sqlquery": "msg.topic",
-    "sql": "",
-    "x": 640,
-    "y": 520,
-    "wires": [
-      [
-        "n_wde_sqlite_upsert_prep"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_sqlite_upsert_prep",
-    "type": "function",
-    "z": "tab_wherewhen_export",
-    "name": "SQLite: prep status UPSERT",
-    "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
-    "outputs": 1,
-    "x": 400,
-    "y": 580,
-    "wires": [
-      [
-        "n_wde_sqlite_upsert_db"
-      ]
-    ]
-  },
-  {
-    "id": "n_wde_sqlite_upsert_db",
-    "type": "sqlite",
-    "z": "tab_wherewhen_export",
-    "name": "sqlite: UPSERT job_status",
-    "mydb": "cfg_lucius_status_db",
-    "sqlquery": "msg.topic",
-    "sql": "",
-    "x": 640,
-    "y": 580,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "cfg_lucius_status_db",
-    "type": "sqlitedb",
-    "z": "",
-    "name": "Lucius status DB",
-    "db": "/share/lucius_status.db",
-    "mode": "RWC"
-  }
+    {
+        "id": "tab_wherewhen_export",
+        "type": "tab",
+        "label": "wherewhen - Data Export",
+        "disabled": false,
+        "info": "PLAN.md §20 — backs up everything InfluxDB holds, so a wiped/migrated HA install isn't a total loss. Manual trigger, plus a weekly schedule (Sunday 3am) so a usable backup exists even if Ward forgets to run one by hand — the whole value of a backup depends on how stale it is when actually needed.\n\nEnumerates InfluxDB measurements DYNAMICALLY via Flux's `schema.measurements()` — not a hardcoded list — so newly-added measurements (this project's data model has been growing quickly) get picked up automatically without this flow needing an edit every time. For each measurement, runs a full-range Flux query and writes InfluxDB's own CSV response body directly to /share/lucius_data_backup/<timestamp>/<measurement>.csv — no manual CSV conversion, InfluxDB's query API already returns annotated CSV natively (Content-Type: application/vnd.flux request, CSV response by default). Also writes a manifest.json (measurement list + row counts) for the Restore flow's verify mode to check against.\n\nFirst place any of this project's flows queries InfluxDB (every other flow only ever writes to /api/v2/write) — genuinely new API surface, worth confirming the /api/v2/query request shape works as expected on first real run.\n\nUNTESTED — built from InfluxDB v2's documented Flux/query API, never run against a live InfluxDB instance."
+    },
+    {
+        "id": "n_wde_trigger_manual",
+        "type": "inject",
+        "z": "tab_wherewhen_export",
+        "name": "Manual trigger",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 60,
+        "wires": [
+            [
+                "n_wde_read_secrets_file"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_trigger_weekly",
+        "type": "inject",
+        "z": "tab_wherewhen_export",
+        "name": "Weekly — Sunday 3am",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "0 3 * * 0",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 100,
+        "wires": [
+            [
+                "n_wde_read_secrets_file"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_read_secrets_file",
+        "type": "file in",
+        "z": "tab_wherewhen_export",
+        "name": "Read /share/lucius_secrets.json",
+        "filename": "/share/lucius_secrets.json",
+        "filenameType": "str",
+        "format": "utf8",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "none",
+        "allProps": false,
+        "x": 400,
+        "y": 80,
+        "wires": [
+            [
+                "n_wde_load_secrets"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_load_secrets",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Load secrets + start job log + backup dir",
+        "func": "let secrets;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    node.error('Could not parse secrets file: ' + e.message, msg);\n    return null;\n}\nmsg.secrets = secrets;\nmsg.job_started_at = new Date().toISOString();\n// Timestamped per run (PLAN.md §20) — keeps every run's files separate,\n// exact format YYYY-MM-DD_HHmmss so it sorts correctly as plain text too.\nconst d = new Date();\nconst pad = n => String(n).padStart(2, '0');\nconst stamp = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());\nmsg.backup_dir = '/share/lucius_data_backup/' + stamp;\nflow.set('wde_secrets', secrets);\nflow.set('wde_job_started_at', msg.job_started_at);\nflow.set('wde_backup_dir', msg.backup_dir);\n\nmsg.payload = 'mkdir -p ' + msg.backup_dir;\nreturn msg;",
+        "outputs": 1,
+        "x": 680,
+        "y": 80,
+        "wires": [
+            [
+                "n_wde_mkdir"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_mkdir",
+        "type": "exec",
+        "z": "tab_wherewhen_export",
+        "command": "",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "10",
+        "winHide": false,
+        "oldrc": false,
+        "name": "mkdir -p this run's backup_dir",
+        "x": 950,
+        "y": 80,
+        "wires": [
+            [
+                "n_wde_write_start_influx"
+            ],
+            [
+                "n_wde_write_start_influx"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "n_wde_write_start_influx",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Prepare start-point write",
+        "func": "const secrets = flow.get('wde_secrets');\nconst nowNs = Date.now() * 1000000;\nmsg.url = secrets.influxdb_url + '/api/v2/write?org=' + secrets.influxdb_org + '&bucket=' + secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = 'sync_job_runs,job_name=wherewhen_export,status=started value=1 ' + nowNs;\nreturn msg;",
+        "outputs": 1,
+        "x": 400,
+        "y": 160,
+        "wires": [
+            [
+                "n_wde_write_start_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_write_start_http",
+        "type": "http request",
+        "z": "tab_wherewhen_export",
+        "name": "InfluxDB: write start point",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 650,
+        "y": 160,
+        "wires": [
+            [
+                "n_wde_list_measurements_prep"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_list_measurements_prep",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Build schema.measurements() Flux query",
+        "func": "// First InfluxDB QUERY this project's flows have ever made (every other\n// flow only ever writes). Content-Type application/vnd.flux + raw Flux\n// text body is the documented InfluxDB v2 request shape for this — the\n// response is CSV by default, no separate 'give me CSV' step needed.\nconst secrets = flow.get('wde_secrets');\nconst flux = 'import \"influxdata/influxdb/schema\"\\nschema.measurements(bucket: \"' + secrets.influxdb_bucket + '\")';\nmsg.url = secrets.influxdb_url + '/api/v2/query?org=' + encodeURIComponent(secrets.influxdb_org);\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'application/vnd.flux', 'Accept': 'application/csv' };\nmsg.payload = flux;\nreturn msg;",
+        "outputs": 1,
+        "x": 200,
+        "y": 220,
+        "wires": [
+            [
+                "n_wde_list_measurements_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_list_measurements_http",
+        "type": "http request",
+        "z": "tab_wherewhen_export",
+        "name": "InfluxDB: query measurement list",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 470,
+        "y": 220,
+        "wires": [
+            [
+                "n_wde_parse_measurement_list"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_parse_measurement_list",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Parse measurement names from CSV response",
+        "func": "// InfluxDB's annotated CSV: lines starting with # are metadata\n// (#datatype/#group/#default), then one real header row (starting with\n// the literal column name, e.g. ',result,table,_value'), then data rows.\n// schema.measurements() returns one column, _value, one measurement name\n// per row — this parse is much simpler than the general case Restore's\n// CSV parser has to handle (see that flow's own function for the fuller\n// version of this same logic).\nconst text = msg.payload || '';\nconst lines = text.split('\\n').map(l => l.trim()).filter(Boolean);\nconst headerLine = lines.find(l => !l.startsWith('#'));\nif (!headerLine) {\n    msg.measurements = [];\n} else {\n    const cols = headerLine.split(',');\n    const valueIdx = cols.indexOf('_value');\n    const dataLines = lines.slice(lines.indexOf(headerLine) + 1).filter(l => !l.startsWith('#'));\n    msg.measurements = dataLines.map(l => l.split(',')[valueIdx]).filter(Boolean);\n}\nflow.set('wde_measurements', msg.measurements);\nif (!msg.measurements.length) {\n    node.warn('No measurements found in bucket — nothing to export this run (empty bucket, or the schema.measurements() query itself needs checking on first real run).');\n    return [null, msg];\n}\nreturn [msg, null];",
+        "outputs": 2,
+        "x": 200,
+        "y": 280,
+        "wires": [
+            [
+                "n_wde_split_measurements"
+            ],
+            [
+                "n_wde_write_manifest"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_split_measurements",
+        "type": "split",
+        "z": "tab_wherewhen_export",
+        "name": "Split: one message per measurement",
+        "splt": "\\n",
+        "spltType": "str",
+        "arraySplt": 1,
+        "arraySpltType": "len",
+        "stream": false,
+        "addname": "",
+        "property": "measurements",
+        "x": 480,
+        "y": 280,
+        "wires": [
+            [
+                "n_wde_prep_measurement_query"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_prep_measurement_query",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Build full-range Flux query for this measurement",
+        "func": "const secrets = flow.get('wde_secrets');\nconst measurement = msg.payload; // one measurement name, from the split\nmsg.measurement_name = measurement;\nconst flux = 'from(bucket: \"' + secrets.influxdb_bucket + '\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"' + measurement.replace(/\"/g, '\\\\\"') + '\")';\nmsg.url = secrets.influxdb_url + '/api/v2/query?org=' + encodeURIComponent(secrets.influxdb_org);\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'application/vnd.flux', 'Accept': 'application/csv' };\nmsg.payload = flux;\nreturn msg;",
+        "outputs": 1,
+        "x": 730,
+        "y": 280,
+        "wires": [
+            [
+                "n_wde_query_measurement_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_query_measurement_http",
+        "type": "http request",
+        "z": "tab_wherewhen_export",
+        "name": "InfluxDB: query this measurement (full range)",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 990,
+        "y": 280,
+        "wires": [
+            [
+                "n_wde_prep_csv_write"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_prep_csv_write",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Prepare CSV file write",
+        "func": "const backupDir = flow.get('wde_backup_dir');\nmsg.filename = backupDir + '/' + msg.measurement_name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.csv';\nmsg.row_count = (msg.payload.match(/\\n/g) || []).length; // rough, for the manifest — not exact (header/annotation lines included)\nreturn msg;",
+        "outputs": 1,
+        "x": 200,
+        "y": 340,
+        "wires": [
+            [
+                "n_wde_write_csv_file"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_write_csv_file",
+        "type": "file",
+        "z": "tab_wherewhen_export",
+        "name": "Write measurement CSV (msg.filename = dynamic path)",
+        "filename": "filename",
+        "filenameType": "msg",
+        "appendNewline": false,
+        "createDir": true,
+        "overwriteFile": "true",
+        "encoding": "none",
+        "x": 480,
+        "y": 340,
+        "wires": [
+            [
+                "n_wde_join_measurements"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_join_measurements",
+        "type": "join",
+        "z": "tab_wherewhen_export",
+        "name": "Join: wait for all measurement writes",
+        "mode": "auto",
+        "build": "array",
+        "property": "measurement_name",
+        "propertyType": "msg",
+        "key": "topic",
+        "joiner": "\\n",
+        "joinerType": "str",
+        "accumulate": false,
+        "timeout": "",
+        "count": "",
+        "reduceRight": false,
+        "comment": "Paired with n_wde_split_measurements via msg.parts (mode: auto).",
+        "x": 730,
+        "y": 340,
+        "wires": [
+            [
+                "n_wde_write_manifest"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_write_manifest",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Build + write manifest.json",
+        "func": "// Fires from two paths: the normal one (after all measurement CSVs are\n// written) and the empty-bucket path (n_wde_parse_measurement_list's\n// second output, nothing to split/join over). Either way, a manifest\n// always gets written so Restore's verify mode always has something to\n// check against, even for a legitimately-empty backup.\nconst measurements = flow.get('wde_measurements') || [];\nconst backupDir = flow.get('wde_backup_dir');\nmsg.manifest = {\n    exported_at: new Date().toISOString(),\n    measurement_count: measurements.length,\n    measurements: measurements\n};\nmsg.filename = backupDir + '/manifest.json';\nmsg.payload = JSON.stringify(msg.manifest, null, 2);\nmsg.secrets = flow.get('wde_secrets');\nmsg.job_started_at = flow.get('wde_job_started_at');\nreturn msg;",
+        "outputs": 1,
+        "x": 480,
+        "y": 400,
+        "wires": [
+            [
+                "n_wde_write_manifest_file"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_write_manifest_file",
+        "type": "file",
+        "z": "tab_wherewhen_export",
+        "name": "Write manifest.json (msg.filename = dynamic path)",
+        "filename": "filename",
+        "filenameType": "msg",
+        "appendNewline": false,
+        "createDir": true,
+        "overwriteFile": "true",
+        "encoding": "none",
+        "x": 730,
+        "y": 400,
+        "wires": [
+            [
+                "n_wde_job_success"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_job_success",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Log success + update HA status",
+        "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at || Date.now()).getTime();\nconst measurements = flow.get('wde_measurements') || [];\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=success measurement_count=' + measurements.length + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_export', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nif (!msg.secrets) msg.secrets = flow.get('wde_secrets');\nreturn msg;",
+        "outputs": 1,
+        "x": 400,
+        "y": 460,
+        "wires": [
+            [
+                "n_wde_final_influx_write",
+                "n_wde_sqlite_ensure_table"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_final_influx_write",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Prepare finish-point write",
+        "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
+        "outputs": 1,
+        "x": 660,
+        "y": 460,
+        "wires": [
+            [
+                "n_wde_final_influx_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_final_influx_http",
+        "type": "http request",
+        "z": "tab_wherewhen_export",
+        "name": "InfluxDB: write finish point",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 910,
+        "y": 460,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "n_wde_catch",
+        "type": "catch",
+        "z": "tab_wherewhen_export",
+        "name": "Catch any flow error (job_failed gap, Aug 2026)",
+        "scope": null,
+        "uncaught": false,
+        "comment": "Fixes the gap flagged in PLAN.md §20's 'Known gap' note — this flow previously only handled its success path. Nothing in this flow has a native error output (all function/file/exec nodes here are single-output on their main path), so a catch node is what actually detects a real failure (a bad Flux query, disk write error, malformed InfluxDB CSV response). Scope null = catches any node on this tab.",
+        "x": 300,
+        "y": 620,
+        "wires": [
+            [
+                "n_wde_job_failed"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_job_failed",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Log failure + update HA status",
+        "func": "const nowNs = Date.now() * 1000000;\nconst detail = ((msg.error && msg.error.message) || 'unknown error').toString();\nconst source = (msg.error && msg.error.source && msg.error.source.name) || 'unknown node';\nconst safeDetail = (source + ': ' + detail).replace(/([ ,=\"])/g, '\\\\$1');\nmsg.secrets = flow.get('wde_secrets');\nmsg.job_started_at = flow.get('wde_job_started_at');\nmsg.influx_finish_point = 'sync_job_runs,job_name=wherewhen_export,status=failed,failure_code=flow_error detail=\"' + safeDetail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'wherewhen_export', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: (source + ': ' + detail).slice(0, 250) };\nnode.warn('wherewhen Data Export failed: ' + source + ': ' + detail);\nreturn msg;",
+        "outputs": 1,
+        "x": 560,
+        "y": 620,
+        "wires": [
+            [
+                "n_wde_final_influx_write",
+                "n_wde_sqlite_ensure_table"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_sqlite_ensure_table",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "SQLite: ensure job_status table exists",
+        "func": "// Ensures the shared status table exists before every write — cheap\n// no-op if it already does. Same idempotent CREATE TABLE IF NOT EXISTS\n// discipline as godaddy/sql/upgrade_from_3.0.0.sql, just run inline\n// rather than as a separate manual step (Ward, Aug 2026 — \"a node red\n// task that initializes it, and keeps it up to date\"). Identical in\n// every flow that writes status — duplicated on purpose, matching this\n// project's existing preference for self-contained nodes over a shared-\n// context module pattern.\nmsg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+        "outputs": 1,
+        "x": 400,
+        "y": 520,
+        "wires": [
+            [
+                "n_wde_sqlite_ensure_table_db"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_sqlite_ensure_table_db",
+        "type": "sqlite",
+        "z": "tab_wherewhen_export",
+        "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+        "mydb": "cfg_lucius_status_db",
+        "sqlquery": "msg.topic",
+        "sql": "",
+        "x": 640,
+        "y": 520,
+        "wires": [
+            [
+                "n_wde_sqlite_upsert_prep"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_sqlite_upsert_prep",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "SQLite: prep status UPSERT",
+        "func": "// Builds the UPSERT from msg.sqlite_job (set by job_success/job_failed\n// above). 'success' mode updates last_success and clears last_error;\n// 'failure' mode updates last_error and deliberately leaves last_success\n// untouched (a failure shouldn't erase the last known-good run). checkpoint\n// is job-specific optional state (only oura_sync uses it, for its self-heal\n// fetch window) — only touched when the caller actually supplies one.\nfunction esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n    if (j.checkpoint !== undefined && j.checkpoint !== null) setClauses.push('checkpoint=excluded.checkpoint');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+        "outputs": 1,
+        "x": 400,
+        "y": 580,
+        "wires": [
+            [
+                "n_wde_sqlite_upsert_db"
+            ]
+        ]
+    },
+    {
+        "id": "n_wde_sqlite_upsert_db",
+        "type": "sqlite",
+        "z": "tab_wherewhen_export",
+        "name": "sqlite: UPSERT job_status",
+        "mydb": "cfg_lucius_status_db",
+        "sqlquery": "msg.topic",
+        "sql": "",
+        "x": 640,
+        "y": 580,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "cfg_lucius_status_db",
+        "type": "sqlitedb",
+        "z": "",
+        "name": "Lucius status DB",
+        "db": "/share/lucius_status.db",
+        "mode": "RWC"
+    }
 ]

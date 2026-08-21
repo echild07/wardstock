@@ -268,6 +268,22 @@
     margin-top: 0.7rem;
   }
 
+  /* wherewhen's own mark (Ward, Aug 2026 — "use the logo in the flyer,
+     when you mention wherewhen") — vertical-align/inline-block rather
+     than flexbox, deliberately: this sits inside a harbor-card <td>, and
+     marketing/README.md already documents wkhtmltopdf's old rendering
+     engine failing to lay out Grid/Flexbox reliably inside this same
+     table — an inline image needs none of that. Small border-radius —
+     the logo itself (Ward's Aug 2026 minimalist redesign) is a solid-
+     background square, same full-bleed-badge treatment as the app's own
+     icon-192.png, not a transparent mark — a slight round softens it
+     into a badge next to serif text instead of a hard-edged block. */
+  .wherewhen-mark {
+    vertical-align: middle;
+    margin-right: 0.5rem;
+    border-radius: 6px;
+  }
+
   .harbor-card ul {
     margin-top: 0.7rem;
     padding-left: 1.1rem;
@@ -414,8 +430,90 @@
     color: rgba(62,92,118,0.85);
   }
 
+  /* ---------- ANALYTICS REFERENCE (wherewhen's 20 analyses) ---------- */
+  .reference-section {
+    padding: 2.8rem 3rem 3rem;
+    page-break-before: always;
+  }
+
+  .reference-section .eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--brass);
+  }
+
+  .reference-section h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 1.7rem;
+    color: var(--navy);
+    margin-top: 0.4rem;
+  }
+
+  .reference-lede {
+    margin-top: 0.9rem;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: var(--ink);
+    max-width: 70ch;
+  }
+
+  .ref-group { margin-top: 2rem; }
+
+  .ref-group-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--brass);
+    border-bottom: 1px solid rgba(15,30,46,0.16);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .ref-row {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 0.9rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid rgba(15,30,46,0.08);
+  }
+
+  .ref-row:first-child { border-top: none; }
+
+  .ref-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--steel);
+    padding-top: 0.15rem;
+  }
+
+  .ref-name {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 0.98rem;
+    color: var(--navy);
+  }
+
+  .ref-detail {
+    font-size: 0.84rem;
+    color: var(--ink);
+    line-height: 1.55;
+    margin-top: 0.25rem;
+  }
+
+  .ref-detail .k {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--steel);
+  }
+
   @media (max-width: 640px) {
-    .hero, .bearing, .manifest-header, .manifest, .harbor-section, .signals, .closer, footer {
+    .hero, .bearing, .manifest-header, .manifest, .harbor-section, .signals, .closer, .reference-section, footer {
       padding-left: 1.4rem;
       padding-right: 1.4rem;
     }
@@ -428,6 +526,7 @@
     .harbor-cols, .harbor-cols tbody, .harbor-cols tr, .harbor-cols td { display: block; width: 100% !important; }
     .harbor-card { margin-bottom: 1rem; }
     .closer { grid-template-columns: 1fr; }
+    .ref-row { grid-template-columns: 1fr; gap: 0.2rem; }
   }
 
   @media print {
@@ -527,7 +626,7 @@
         <td width="4%"></td>
         <td class="harbor-card harbor" valign="top" width="48%">
           <span class="harbor-tag">At Harbor — The wherewhen Engine</span>
-          <h3>The work done ashore</h3>
+          <h3><img src="wherewhen-logo.png" alt="" width="26" height="26" class="wherewhen-mark"> The work done ashore</h3>
           <ul>
             <li>Runs privately on your own home server — not a shared cloud</li>
             <li>High-resolution readings and long-range trend analysis</li>
@@ -568,6 +667,120 @@
       <p class="fine-print">Personal use only. One vessel, one crew, one log.</p>
     </div>
   </div>
+
+  <!-- ANALYTICS REFERENCE -->
+  <section class="reference-section">
+    <div class="eyebrow">The Chart Room</div>
+    <h2><img src="wherewhen-logo.png" alt="" width="34" height="34" class="wherewhen-mark"> What the wherewhen engine reads.</h2>
+    <p class="reference-lede">Every analysis below runs quietly at harbor, on the wherewhen engine — never in the cloud. Reference numbers and names match the Analysis page exactly, so a chart on screen and an entry here are always the same thing. "Input" is what feeds it; "Reads" is what it actually computes from that input — a trend, a correlation, a count, or (for a few) just a clean record with nothing computed at all.</p>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Headline — the core function of this page</div>
+
+      <div class="ref-row">
+        <div class="ref-num">#17</div>
+        <div>
+          <div class="ref-name">Full correlation matrix</div>
+          <div class="ref-detail"><span class="k">Input</span> — incidents, alcohol, caffeine, weight, mood, sleep efficiency, HRV, exercise minutes.<br><span class="k">Reads</span> — every pairwise combination of those eight, correlation coefficient plus how many paired days it's based on. The one chart meant to surface a link nothing else would think to check.</div>
+        </div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#18</div>
+        <div>
+          <div class="ref-name">Unreported-anxiety detection</div>
+          <div class="ref-detail"><span class="k">Input</span> — HRV, resting heart rate, and sleep efficiency, split into "days with a logged incident" vs. "days without."<br><span class="k">Reads</span> — flags a day with nothing logged whose HRV/resting-HR/sleep-efficiency all sit on the wrong side of the incident-day averages at once — a pattern match, not a diagnosis.</div>
+        </div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#19</div>
+        <div>
+          <div class="ref-name">Bedtime / wake-time trend</div>
+          <div class="ref-detail"><span class="k">Input</span> — Oura's own bedtime timestamp and time-in-bed per session.<br><span class="k">Reads</span> — one connected bar per night, bedtime to wake time, in real clock time — not duration, just when.</div>
+        </div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#20</div>
+        <div>
+          <div class="ref-name">Sleep-stage timeline (hypnogram)</div>
+          <div class="ref-detail"><span class="k">Input</span> — Oura's sleep stage every 15 minutes (deep/light/REM/awake), the longest session in range.<br><span class="k">Reads</span> — a colored timeline of one full night, not a statistic.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Automatic — Oura, scale, medication schedule</div>
+
+      <div class="ref-row">
+        <div class="ref-num">#1</div>
+        <div><div class="ref-name">Sleep duration trend</div><div class="ref-detail"><span class="k">Input</span> — Oura total sleep duration.<br><span class="k">Reads</span> — day-by-day trend, hours.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#2</div>
+        <div><div class="ref-name">Sleep efficiency trend</div><div class="ref-detail"><span class="k">Input</span> — Oura sleep efficiency.<br><span class="k">Reads</span> — day-by-day trend, percent. Kept separate from duration — a full-but-fragmented night and a short-but-efficient one are different problems.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#3</div>
+        <div><div class="ref-name">HRV trend</div><div class="ref-detail"><span class="k">Input</span> — Oura average HRV during sleep.<br><span class="k">Reads</span> — day-by-day trend, milliseconds. Watched for upward movement specifically — higher HRV generally reads as better recovery.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#4</div>
+        <div><div class="ref-name">Resting heart rate trend</div><div class="ref-detail"><span class="k">Input</span> — Oura lowest heart rate during sleep.<br><span class="k">Reads</span> — day-by-day trend, bpm. The other core autonomic marker alongside HRV.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#5</div>
+        <div><div class="ref-name">Body composition trend</div><div class="ref-detail"><span class="k">Input</span> — weight plus whatever else the scale reports (body fat%, muscle mass, visceral fat%).<br><span class="k">Reads</span> — day-by-day trend, one per field tracked.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#6</div>
+        <div><div class="ref-name">Exercise / activity trend</div><div class="ref-detail"><span class="k">Input</span> — steps, exercise minutes, standing minutes.<br><span class="k">Reads</span> — three separate day-by-day trends.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#7</div>
+        <div><div class="ref-name">Weight vs. medication cadence</div><div class="ref-detail"><span class="k">Input</span> — weight, plus every weekly/bi-weekly medication dose.<br><span class="k">Reads</span> — average weight in the 3 days before vs. 3 days after each dose.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#8</div>
+        <div><div class="ref-name">Medication dosage-change correlation</div><div class="ref-detail"><span class="k">Input</span> — dosage-change history, plus weight, HRV, mood, and incidents.<br><span class="k">Reads</span> — 14-day average of each, before vs. after every dosage change.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#9</div>
+        <div><div class="ref-name">Medication adherence vs. incidents</div><div class="ref-detail"><span class="k">Input</span> — "all medications taken?" from the Daily Log, plus incidents.<br><span class="k">Reads</span> — incident rate on missed-dose days vs. full-adherence days.</div></div>
+      </div>
+    </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Reported — incidents + Daily Log + therapy</div>
+
+      <div class="ref-row">
+        <div class="ref-num">#10</div>
+        <div><div class="ref-name">Alcohol &amp; caffeine vs. sleep</div><div class="ref-detail"><span class="k">Input</span> — Daily Log alcohol/caffeine counts, plus Oura sleep efficiency.<br><span class="k">Reads</span> — correlation coefficient, each factor against sleep efficiency.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#11</div>
+        <div><div class="ref-name">Mood / state-of-mind trend</div><div class="ref-detail"><span class="k">Input</span> — Daily Log mood rating and state of mind, plus sleep efficiency, alcohol, caffeine, and incidents.<br><span class="k">Reads</span> — trend for mood and state of mind, plus a correlation of mood against each of the other four.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#12</div>
+        <div><div class="ref-name">Symptom &amp; category clustering</div><div class="ref-detail"><span class="k">Input</span> — incident category (anxiety/cardiac/medical) and symptom checkboxes.<br><span class="k">Reads</span> — count by category, and the most common symptom pairs seen together.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#13</div>
+        <div><div class="ref-name">Day-of-week / time-of-day incident clustering</div><div class="ref-detail"><span class="k">Input</span> — incident timestamps.<br><span class="k">Reads</span> — count by day of week and by hour of day, looking for a pattern in when episodes happen.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#14</div>
+        <div><div class="ref-name">Incident intensity/duration trend</div><div class="ref-detail"><span class="k">Input</span> — logged anxiety intensity and duration, per incident.<br><span class="k">Reads</span> — two day-by-day trends — the most direct "getting better or worse" view in the whole set.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#15</div>
+        <div><div class="ref-name">Therapy session effects</div><div class="ref-detail"><span class="k">Input</span> — mood before/after each therapy session, plus incidents.<br><span class="k">Reads</span> — average mood change per session, and incident counts in the 7 days before vs. after each one.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">#16</div>
+        <div><div class="ref-name">Night-waking context</div><div class="ref-detail"><span class="k">Input</span> — free-text night-waking notes from the Daily Log.<br><span class="k">Reads</span> — a chronological list, not a statistic — why Ward woke, in his own words, alongside Oura's own sleep-stage record of when.</div></div>
+      </div>
+    </div>
+  </section>
 
   <footer>
     <div class="footer-row">

@@ -28,4 +28,10 @@ log_ha_sync($pdo, 'get_shared_config', 'success');
 echo json_encode([
     'oura_client_id' => OURA_CLIENT_ID,
     'oura_client_secret' => OURA_CLIENT_SECRET,
+    // Settings page (Ward, Aug 2026) — the analysis engine's day-boundary
+    // grouping used to hardcode America/New_York; now it fetches this
+    // fresh each run and falls back to that same default if unset/
+    // unreachable. get_setting() returning null (never saved yet) is the
+    // normal case for an install that hasn't visited settings.php.
+    'preferred_timezone' => get_setting($pdo, 'preferred_timezone') ?: 'America/New_York',
 ]);

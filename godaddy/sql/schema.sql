@@ -135,8 +135,21 @@ CREATE TABLE IF NOT EXISTS app_settings (
     setting_value VARCHAR(255)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.1')
-ON DUPLICATE KEY UPDATE setting_value = '3.1';
+-- Kept in sync with upgrade_from_3.0.0.sql's own version-tracking stamp
+-- at the bottom of that file — this baseline already includes every
+-- table/seed that file's migrations add cumulatively (medication_dosage_
+-- history, analysis_results, attention_snoozes, proposed_events,
+-- blood_pressure_readings, preferred_timezone), so a fresh install and a
+-- fully-migrated one should always agree on this number. (Found stale at
+-- '3.1' during the preferred_timezone addition, Aug 2026 — this baseline
+-- had already gained the 3.1 tables above without the stamp being
+-- updated to match; fixed here.)
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.3')
+ON DUPLICATE KEY UPDATE setting_value = '3.3';
+
+-- Preferred timezone (Ward, Aug 2026) — see settings.php / upgrade_from_3.0.0.sql's
+-- own comment on this same key for why it exists.
+INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('preferred_timezone', 'America/New_York');
 
 CREATE TABLE IF NOT EXISTS app_user (
     id INT AUTO_INCREMENT PRIMARY KEY,

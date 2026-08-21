@@ -65,6 +65,19 @@ $latest = $pdo->query('
 $byKey = [];
 foreach ($latest as $row) { $byKey[$row['analysis_key']] = $row; }
 
+// Raw-data export for debugging a specific chart (Ward, Aug 2026 —
+// requested on the bedtime/wake-time trend and sleep-stage hypnogram
+// after both showed a timezone display bug; built generically, and now
+// surfaced as a visible "Export" link on every analysis card, not just
+// those original two — see the card loop below).
+if (isset($_GET['export']) && isset($byKey[$_GET['export']])) {
+    $exportKey = $_GET['export'];
+    header('Content-Type: application/json');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^a-z0-9_]/', '', $exportKey) . '_' . date('Y-m-d_His') . '.json"');
+    echo $byKey[$exportKey]['result_json'];
+    exit;
+}
+
 // The 20 analyses, PLAN.md §11 — group/number/title/description kept in
 // sync with that section's own numbered list. Headline goes FIRST (Ward,
 // Aug 2026: "the headline is the core functions" — make it the first
@@ -115,7 +128,7 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
 <div class="wrap">
   <header class="topbar">
     <div class="brand">
-      <img src="icon-192.png" alt="" width="36" height="36" class="brand-mark">
+      <img src="wherewhen-logo.png" alt="" width="36" height="36" class="brand-mark">
       <h1>Analysis</h1>
     </div>
   </header>
@@ -174,10 +187,254 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
             $decoded = $result ? json_decode($result['result_json'], true) : null;
             echo render_analysis_result($a['key'], $decoded);
           ?>
+          <?php if ($result): ?>
+            <p class="hint"><a href="analysis.php?export=<?= urlencode($a['key']) ?>">Export raw data (JSON) →</a></p>
+          <?php endif; ?>
         </div>
       <?php endforeach; ?>
     </div>
   <?php endforeach; ?>
 </div>
+<script>
+// Builds the bedtime/wake-time trend and sleep-stage hypnogram charts
+// client-side, from raw UTC timestamps the server sends as-is (see
+// analysis_render.php's comments on those two cases in
+// render_analysis_result()). Ward, Aug 2026: a server-side Eastern
+// conversion was tried first and was the wrong call — whoever is
+// actually looking at the page is the one whose timezone matters, and
+// the browser already knows that. JS's own Date object resolves a UTC
+// ISO string to the browser's local time for free via getHours()/
+// getMinutes() — no timezone library, no guessing.
+(function () {
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    function hoursSinceNoonLocal(iso) {
+        var d = new Date(iso);
+        var raw = d.getHours() + d.getMinutes() / 60;
+        return ((raw - 12) + 24) % 24;
+    }
+
+    function fmtClockFromNoonOffset(h) {
+        if (h === null || h === undefined || isNaN(h)) return '—';
+        var actual = ((h + 12) % 24 + 24) % 24;
+        var hh = Math.floor(actual);
+        var mm = Math.round((actual - hh) * 60);
+        if (mm === 60) { hh = (hh + 1) % 24; mm = 0; }
+        var period = hh < 12 ? 'AM' : 'PM';
+        var hh12 = hh % 12; if (hh12 === 0) hh12 = 12;
+        return hh12 + ':' + pad2(mm) + ' ' + period;
+    }
+
+    function fmtDayLocal(iso) {
+        var d = new Date(iso);
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    function fmtClockLocal(iso) {
+        var d = new Date(iso);
+        var hh = d.getHours(), mm = d.getMinutes();
+        var period = hh < 12 ? 'AM' : 'PM';
+        var hh12 = hh % 12; if (hh12 === 0) hh12 = 12;
+        return hh12 + ':' + pad2(mm) + ' ' + period;
+    }
+
+    function svgEl(tag, attrs) {
+        var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        for (var k in attrs) el.setAttribute(k, attrs[k]);
+        return el;
+    }
+
+    function titled(el, text) {
+        var t = svgEl('title', {});
+        t.textContent = text;
+        el.appendChild(t);
+        return el;
+    }
+
+    function renderBedtimeChart(container) {
+        var raw = [];
+        try { raw = JSON.parse(container.dataset.points || '[]'); } catch (e) { raw = []; }
+        var statsEl = container.parentElement.querySelector('.js-bedtime-stats');
+
+        if (!raw.length) {
+            container.innerHTML = container.dataset.oldFormat === '1'
+                ? '<p class="hint">Stored data for this analysis is in an older format — re-run the Analysis Engine flow to refresh it.</p>'
+                : '<p class="hint">Not enough nights in this period yet.</p>';
+            if (statsEl) statsEl.innerHTML = '';
+            return;
+        }
+
+        var points = raw.map(function (p) {
+            return {
+                date: p.bedtime_time,
+                bedtime_offset: hoursSinceNoonLocal(p.bedtime_time),
+                wake_offset: hoursSinceNoonLocal(p.wake_time),
+            };
+        });
+
+        var allV = [];
+        points.forEach(function (p) { allV.push(p.bedtime_offset, p.wake_offset); });
+        var minV = Math.min.apply(null, allV), maxV = Math.max.apply(null, allV);
+        var pad = Math.max(0.5, (maxV - minV) * 0.15);
+        minV -= pad; maxV += pad;
+        if (maxV === minV) { maxV += 1; minV -= 1; }
+
+        var firstT = new Date(points[0].date).getTime();
+        var lastT = new Date(points[points.length - 1].date).getTime();
+        var span = Math.max(1, lastT - firstT);
+
+        var chartW = 640, chartH = 240, padL = 60, padR = 16, padT = 16, padB = 30;
+        var plotW = chartW - padL - padR, plotH = chartH - padT - padB;
+        var baseY = chartH - padB;
+        var barW = points.length > 1 ? Math.max(3, Math.min(14, plotW / points.length * 0.6)) : 14;
+        function yFor(v) { return padT + plotH * (1 - (v - minV) / (maxV - minV)); }
+
+        var svg = svgEl('svg', { viewBox: '0 0 ' + chartW + ' ' + chartH, class: 'trend-chart', xmlns: 'http://www.w3.org/2000/svg' });
+        svg.appendChild(svgEl('line', { x1: padL, y1: padT, x2: padL, y2: baseY, class: 'chart-axis' }));
+        svg.appendChild(svgEl('line', { x1: padL, y1: baseY, x2: chartW - padR, y2: baseY, class: 'chart-axis' }));
+
+        var maxLabel = svgEl('text', { x: padL - 6, y: padT + 4, class: 'chart-label', 'text-anchor': 'end' });
+        maxLabel.textContent = fmtClockFromNoonOffset(maxV);
+        svg.appendChild(maxLabel);
+        var minLabel = svgEl('text', { x: padL - 6, y: baseY + 4, class: 'chart-label', 'text-anchor': 'end' });
+        minLabel.textContent = fmtClockFromNoonOffset(minV);
+        svg.appendChild(minLabel);
+        var firstLabel = svgEl('text', { x: padL, y: baseY + 18, class: 'chart-label' });
+        firstLabel.textContent = fmtDayLocal(points[0].date);
+        svg.appendChild(firstLabel);
+        var lastLabel = svgEl('text', { x: chartW - padR, y: baseY + 18, class: 'chart-label', 'text-anchor': 'end' });
+        lastLabel.textContent = fmtDayLocal(points[points.length - 1].date);
+        svg.appendChild(lastLabel);
+
+        points.forEach(function (p) {
+            var t = new Date(p.date).getTime();
+            var x = padL + plotW * ((t - firstT) / span);
+            var yA = yFor(p.bedtime_offset), yB = yFor(p.wake_offset);
+            var yTop = Math.min(yA, yB), yBottom = Math.max(yA, yB);
+            var dayLabel = fmtDayLocal(p.date);
+
+            var rect = svgEl('rect', { x: x - barW / 2, y: yTop, width: barW, height: Math.max(1, yBottom - yTop), class: 'av-range-bar' });
+            titled(rect, dayLabel + ': ' + fmtClockFromNoonOffset(p.bedtime_offset) + ' — ' + fmtClockFromNoonOffset(p.wake_offset));
+            svg.appendChild(rect);
+
+            var cA = svgEl('circle', { cx: x, cy: yA, r: 3, class: 'chart-point' });
+            titled(cA, dayLabel + ' — ' + fmtClockFromNoonOffset(p.bedtime_offset));
+            svg.appendChild(cA);
+
+            var cB = svgEl('circle', { cx: x, cy: yB, r: 3, class: 'chart-point-diastolic' });
+            titled(cB, dayLabel + ' — ' + fmtClockFromNoonOffset(p.wake_offset));
+            svg.appendChild(cB);
+        });
+
+        container.innerHTML = '';
+        container.appendChild(svg);
+
+        if (statsEl) {
+            var avgBedtime = points.reduce(function (s, p) { return s + p.bedtime_offset; }, 0) / points.length;
+            var avgWake = points.reduce(function (s, p) { return s + p.wake_offset; }, 0) / points.length;
+            statsEl.innerHTML =
+                '<div class="report-stat"><span class="report-num">' + fmtClockFromNoonOffset(avgBedtime) + '</span><span class="report-label">Avg bedtime</span></div>' +
+                '<div class="report-stat"><span class="report-num">' + fmtClockFromNoonOffset(avgWake) + '</span><span class="report-label">Avg wake time</span></div>';
+        }
+    }
+
+    function renderHypnogram(container) {
+        var buckets = [];
+        try { buckets = JSON.parse(container.dataset.buckets || '[]'); } catch (e) { buckets = []; }
+        if (!buckets.length) return; // PHP already rendered a "no data" message in this case.
+
+        var stageColor = { deep: '#3f5f9a', light: '#5b8cff', rem: '#9a7fdb', awake: '#a13f3f', unknown: '#3a4048' };
+        var stageLabel = { deep: 'Deep', light: 'Light', rem: 'REM', awake: 'Awake', unknown: 'Unknown' };
+        var n = buckets.length;
+        var chartW = 640, chartH = 70, segW = chartW / Math.max(1, n);
+
+        var svg = svgEl('svg', { viewBox: '0 0 ' + chartW + ' ' + chartH, class: 'trend-chart', xmlns: 'http://www.w3.org/2000/svg' });
+        buckets.forEach(function (b, i) {
+            var stage = b.stage || 'unknown';
+            var color = stageColor[stage] || stageColor.unknown;
+            var rect = svgEl('rect', { x: i * segW, y: 10, width: Math.ceil(segW), height: 30, fill: color });
+            titled(rect, fmtClockLocal(b.time) + ': ' + (stageLabel[stage] || stage));
+            svg.appendChild(rect);
+        });
+        var firstLabel = svgEl('text', { x: 0, y: 58, class: 'chart-label' });
+        firstLabel.textContent = fmtClockLocal(buckets[0].time);
+        svg.appendChild(firstLabel);
+        var lastLabel = svgEl('text', { x: chartW, y: 58, class: 'chart-label', 'text-anchor': 'end' });
+        lastLabel.textContent = fmtClockLocal(buckets[n - 1].time);
+        svg.appendChild(lastLabel);
+
+        container.innerHTML = '';
+        container.appendChild(svg);
+    }
+
+    document.querySelectorAll('.js-bedtime-chart').forEach(renderBedtimeChart);
+    document.querySelectorAll('.js-hypnogram-chart').forEach(renderHypnogram);
+
+    // Custom day/value tooltip for every chart (Ward, Aug 2026 — "I would
+    // like to see the day and value if I hover over it... used on a
+    // mobile device"). Runs after the two render calls above so it also
+    // picks up the bedtime/hypnogram charts' own <title> elements, not
+    // just the server-rendered trend-chart bars (av_trend_svg() in
+    // analysis_render.php already puts a <title> on every bar/point —
+    // this replaces the browser's native SVG title tooltip rather than
+    // duplicating it: native tooltips are desktop-hover-only, slow to
+    // appear, and have poor/inconsistent support on touch devices.
+    var tip = document.createElement('div');
+    tip.className = 'av-tooltip';
+    tip.style.display = 'none';
+    document.body.appendChild(tip);
+
+    function showTip(x, y, text) {
+        tip.textContent = text;
+        tip.style.display = 'block';
+        var pad = 14;
+        var left = x + pad;
+        var maxLeft = window.innerWidth - tip.offsetWidth - 8;
+        if (left > maxLeft) left = x - tip.offsetWidth - pad; // flip to the left edge rather than run off-screen
+        tip.style.left = Math.max(8, left) + 'px';
+        tip.style.top = (y + pad) + 'px';
+    }
+    function hideTip() { tip.style.display = 'none'; }
+
+    var activeEl = null;
+    document.querySelectorAll('svg.trend-chart title').forEach(function (titleEl) {
+        var target = titleEl.parentNode;
+        var text = titleEl.textContent;
+        titleEl.remove(); // drop the native title so it can't also pop up underneath this one
+
+        target.addEventListener('pointerenter', function (e) {
+            if (e.pointerType === 'touch') return; // touch uses tap (pointerdown), below, instead of hover
+            showTip(e.clientX, e.clientY, text);
+        });
+        target.addEventListener('pointermove', function (e) {
+            if (e.pointerType === 'touch') return;
+            showTip(e.clientX, e.clientY, text);
+        });
+        target.addEventListener('pointerleave', function (e) {
+            if (e.pointerType === 'touch') return;
+            hideTip();
+        });
+        target.addEventListener('pointerdown', function (e) {
+            if (e.pointerType !== 'touch') return;
+            e.stopPropagation(); // before the document-level listener below closes it right back up
+            if (activeEl === target) {
+                hideTip();
+                activeEl = null;
+            } else {
+                showTip(e.clientX, e.clientY, text);
+                activeEl = target;
+            }
+        });
+    });
+    // Tapping anywhere else on a touch device dismisses whatever's open —
+    // there's no hover state to fall back on to close it automatically.
+    document.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'touch' && activeEl) {
+            hideTip();
+            activeEl = null;
+        }
+    });
+})();
+</script>
 </body>
 </html>

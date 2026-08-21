@@ -164,9 +164,20 @@ CREATE TABLE IF NOT EXISTS blood_pressure_readings (
     INDEX idx_reading_at (reading_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 3.2: preferred timezone (Ward, Aug 2026) — the wherewhen analysis
+-- engine's day-boundary grouping (which calendar day a reading belongs
+-- to) was hardcoded to America/New_York; Ward's own call was that this
+-- should be a real user setting instead, pulled fresh into Home Assistant
+-- rather than hardcoded anywhere (see app/settings.php, api/get_shared_
+-- config.php, homeassistant/PLAN.md §11). INSERT IGNORE, not the db_
+-- version stamp's always-overwrite pattern below — this seeds the
+-- default ONLY if the row doesn't exist yet, so re-running this script
+-- never clobbers a value Ward's already set via the settings page.
+INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('preferred_timezone', 'America/New_York');
+
 DROP PROCEDURE lucius_add_column_if_missing;
 
 -- Version tracking (always safe to (re-)stamp — this is the current
--- state of the 3.x line as of this file's last update, Major.SQL = "3.2").
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.2')
-ON DUPLICATE KEY UPDATE setting_value = '3.2';
+-- state of the 3.x line as of this file's last update, Major.SQL = "3.3").
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.3')
+ON DUPLICATE KEY UPDATE setting_value = '3.3';

@@ -194,6 +194,32 @@ textarea { resize: vertical; }
 }
 .nav-link.active { color: var(--text); background: var(--panel); border-bottom: 2px solid var(--accent); }
 .nav-link.logout { margin-left: auto; }
+/* Icon nav tabs (Ward, Aug 2026 — "turn all the other tabs into icons
+   where we can... 32x32 would be a decent size") — emoji rather than
+   custom SVG, matching the attention bell (🔔) already used this way in
+   this same nav. Icon-only, no visible label — title/aria-label carry
+   the name for a hover tooltip and for screen readers. Composes with the
+   existing .nav-link/.nav-link.active rules above (color/background/
+   active border-bottom all still apply) rather than replacing them. */
+.nav-link.icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+/* wherewhen's own tab uses an image (its logo), not an emoji glyph like
+   the others here — a small round softens its solid-background square
+   (Ward's Aug 2026 minimalist redesign, same full-bleed-badge treatment
+   as the app's own icon-192.png) instead of a hard-edged block sitting
+   among otherwise-transparent icons. */
+.nav-link.icon img {
+  border-radius: 6px;
+}
 
 /* ---------- Dashboard hub ---------- */
 .hub-grid {
@@ -420,6 +446,27 @@ textarea { resize: vertical; }
 .chart-line-diastolic { fill: none; stroke: var(--moderate); stroke-width: 2.5; }
 .chart-point-diastolic { fill: var(--moderate); }
 .av-range-bar { fill: var(--accent); opacity: 0.55; rx: 2; }
+
+/* Custom chart tooltip (Ward, Aug 2026 — "day and value if I hover...
+   used on a mobile device") — replaces the browser's native SVG <title>
+   tooltip, which is desktop-hover-only and has poor/inconsistent mobile
+   support. One shared floating element, positioned by JS in analysis.php;
+   pointer-events: none so it never itself blocks the tap/hover that's
+   meant to reach the chart underneath it. */
+.av-tooltip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  max-width: 240px;
+  white-space: nowrap;
+}
 
 /* ---------- Radio/checkbox rows (export page, medication list) ---------- */
 .radio-row, .checkbox-row {

@@ -29,7 +29,7 @@ $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fet
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WardStock — Where When</title>
+<title>WardStock — wherewhen</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -41,7 +41,7 @@ $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fet
   <header class="topbar">
     <div class="brand">
       <img src="icon-192.png" alt="" width="36" height="36" class="brand-mark">
-      <h1>Where When</h1>
+      <h1>wherewhen</h1>
     </div>
   </header>
   <?php include __DIR__ . '/partials_nav.php'; ?>

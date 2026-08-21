@@ -22,10 +22,10 @@ $attentionNeeded = ($pdo instanceof PDO)
 <a class="attention-icon<?= $attentionNeeded ? ' attention-icon-active' : '' ?>"
    href="index.php#attention" title="<?= $attentionNeeded ? 'Something needs your attention' : 'Nothing needs attention right now' ?>">🔔</a>
 <nav class="mainnav">
-  <a class="<?= nav_class('home', $active) ?>" href="index.php">Home</a>
-  <a class="<?= nav_class('incidents', $active) ?>" href="incidents.php">Incidents</a>
-  <a class="<?= nav_class('daily', $active) ?>" href="daily.php">Daily Log</a>
-  <a class="<?= nav_class('medications', $active) ?>" href="medications.php">Medications</a>
-  <a class="<?= nav_class('wherewhen', $active) ?>" href="wherewhen.php">Where When</a>
+  <a class="<?= nav_class('home', $active) ?> icon" href="index.php" title="Home" aria-label="Home">🏠</a>
+  <a class="<?= nav_class('incidents', $active) ?> icon" href="incidents.php" title="Incidents" aria-label="Incidents">🚨</a>
+  <a class="<?= nav_class('daily', $active) ?> icon" href="daily.php" title="Daily Log" aria-label="Daily Log">📋</a>
+  <a class="<?= nav_class('medications', $active) ?> icon" href="medications.php" title="Medications" aria-label="Medications">💊</a>
+  <a class="<?= nav_class('wherewhen', $active) ?> icon" href="wherewhen.php" title="wherewhen" aria-label="wherewhen"><img src="wherewhen-logo-32.png" width="32" height="32" alt=""></a>
   <a class="nav-link logout" href="logout.php">Log out</a>
 </nav>
