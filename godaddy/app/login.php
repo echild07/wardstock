@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/app_version.php';
 start_session();
 
 $error = '';
@@ -45,6 +46,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <button type="submit">Log in</button>
   </form>
   <p class="hint" style="margin-top:24px;"><a href="privacy.php">Privacy Policy</a> · <a href="terms.php">Terms of Service</a> · <a href="about.php">About</a> · <a href="marketing.html">LeeWard / WardStock flyer</a></p>
+  <?php
+    // Version on the login page itself (Ward, Aug 2026 — "so you can
+    // validate which version is currently running... prefer you show it
+    // so I can see it too"). Visible, not hidden in HTML — the whole
+    // point was for both of us to be able to check this without digging,
+    // and about.php already shows it once logged in, so there's nothing
+    // sensitive about surfacing it a page earlier too.
+  ?>
+  <p class="hint" style="margin-top:8px; opacity:0.6;">v<?= htmlspecialchars(APP_VERSION) ?> "<?= htmlspecialchars(APP_VERSION_NAME) ?>"</p>
 </div>
 </body>
 </html>

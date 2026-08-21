@@ -192,14 +192,27 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('preferred_
 -- nothing's left to delete, and the index swap only acts if the old key
 -- still exists / the new one doesn't yet (information_schema checks,
 -- same dynamic-DDL pattern as lucius_add_column_if_missing above).
-DELETE r FROM analysis_results r
-WHERE EXISTS (
+--
+-- Real error hit running this on GoDaddy's actual MySQL/MariaDB, Aug
+-- 2026: "#1093 - Table 'r' is specified twice, both as a target for
+-- 'DELETE' and as a separate source for data." Some MySQL/MariaDB
+-- versions reject a DELETE that references its own table in a
+-- correlated subquery, even indirectly through a different alias — a
+-- well-known restriction, worked around here the standard way: compute
+-- the IDs to KEEP in a temporary table first (a plain SELECT has no
+-- such restriction), then DELETE by a simple NOT IN against that
+-- separate table instead of self-referencing at all.
+CREATE TEMPORARY TABLE lucius_keep_ids AS
+SELECT r.id FROM analysis_results r
+WHERE NOT EXISTS (
     SELECT 1 FROM analysis_results r2
     WHERE r2.analysis_key = r.analysis_key AND r2.period_type = r.period_type
     AND (r2.analysis_version > r.analysis_version
          OR (r2.analysis_version = r.analysis_version AND r2.computed_at > r.computed_at)
          OR (r2.analysis_version = r.analysis_version AND r2.computed_at = r.computed_at AND r2.id > r.id))
 );
+DELETE FROM analysis_results WHERE id NOT IN (SELECT id FROM lucius_keep_ids);
+DROP TEMPORARY TABLE lucius_keep_ids;
 
 SET @lucius_old_key_exists = (
     SELECT COUNT(*) FROM information_schema.STATISTICS
