@@ -780,6 +780,14 @@
         <div><div class="ref-name">Night-waking context</div><div class="ref-detail"><span class="k">Input</span> — free-text night-waking notes from the Daily Log.<br><span class="k">Reads</span> — a chronological list, not a statistic — why Ward woke, in his own words, alongside Oura's own sleep-stage record of when.</div></div>
       </div>
     </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">How sleep time is actually calculated</div>
+      <p class="reference-lede">Sleep duration, sleep efficiency, HRV, resting heart rate, and the bedtime/wake-time chart (#1-4 and #19) all come from the same underlying idea, worth spelling out since it isn't obvious: a wearable ring or watch doesn't hand over one clean "you slept from X to Y" answer — it reports sessions, and wherewhen has to decide which session is actually last night.</p>
+      <p class="reference-lede">This build reads an Oura ring, but nothing about the approach is specific to Oura — any device that reports a session's start and end time, whether it was real sleep or a false alarm, and roughly how long it lasted would fit the same model. Oura happens to be what Ward wears.</p>
+      <p class="reference-lede">Oura itself already sorts sessions into a few kinds: a real overnight sleep, a shorter confirmed nap, a late-evening nap credited to the next day, and — usefully — sessions Ward reviewed and rejected as a false alarm (the ring mainly tracks movement on the hand it's worn on, so sitting still at a desk for long enough can occasionally get misread as a nap). Only the real-overnight kind counts as "the night" for these charts; false alarms and short naps are left out, and if more than one real overnight session somehow exists for one calendar night, the longer one wins.</p>
+      <p class="reference-lede">Bedtime is simply when that session started. Wake time is Oura's own answer for when it truly ended — sustained time out of bed, not just the first stir — used directly whenever the device provides it. A brief middle-of-the-night wake-up that leads right back to sleep is the device's own call, not something wherewhen merges or splits; it just reads whatever boundaries the device already decided on. Any reading clearly outside what's physically possible (a negative duration, an efficiency over 100%) is dropped before it's ever considered, on any device.</p>
+    </div>
   </section>
 
   <footer>
