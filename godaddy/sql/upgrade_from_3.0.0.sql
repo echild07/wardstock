@@ -175,9 +175,53 @@ CREATE TABLE IF NOT EXISTS blood_pressure_readings (
 -- never clobbers a value Ward's already set via the settings page.
 INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('preferred_timezone', 'America/New_York');
 
+-- 3.3: analysis_results — collapse the unique key to (analysis_key,
+-- period_type) instead of including period_start/period_end/
+-- analysis_version (see the long comment on this table in schema.sql
+-- for the full reasoning — a real design gap Ward caught: the old key
+-- let every run of a rolling-window tier insert a brand new row
+-- forever, since period_start shifts on every run; picking "latest
+-- computed_at" to display then meant daily's much more frequent reruns
+-- always buried weekly/monthly/all, which could never actually be seen
+-- no matter how recently they'd run). Cleanup FIRST — purge every row
+-- except the single best one per (analysis_key, period_type), "best" =
+-- highest analysis_version then most recent computed_at — required
+-- before the new unique key can be added, since it would otherwise
+-- reject on the exact duplicates it's meant to prevent going forward.
+-- Both steps below are safe to re-run: the DELETE is a no-op once
+-- nothing's left to delete, and the index swap only acts if the old key
+-- still exists / the new one doesn't yet (information_schema checks,
+-- same dynamic-DDL pattern as lucius_add_column_if_missing above).
+DELETE r FROM analysis_results r
+WHERE EXISTS (
+    SELECT 1 FROM analysis_results r2
+    WHERE r2.analysis_key = r.analysis_key AND r2.period_type = r.period_type
+    AND (r2.analysis_version > r.analysis_version
+         OR (r2.analysis_version = r.analysis_version AND r2.computed_at > r.computed_at)
+         OR (r2.analysis_version = r.analysis_version AND r2.computed_at = r.computed_at AND r2.id > r.id))
+);
+
+SET @lucius_old_key_exists = (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'analysis_results' AND INDEX_NAME = 'analysis_period_version'
+);
+SET @lucius_ddl = IF(@lucius_old_key_exists > 0, 'ALTER TABLE analysis_results DROP INDEX analysis_period_version', 'SELECT 1');
+PREPARE lucius_stmt FROM @lucius_ddl;
+EXECUTE lucius_stmt;
+DEALLOCATE PREPARE lucius_stmt;
+
+SET @lucius_new_key_exists = (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'analysis_results' AND INDEX_NAME = 'analysis_key_period_type'
+);
+SET @lucius_ddl = IF(@lucius_new_key_exists = 0, 'ALTER TABLE analysis_results ADD UNIQUE KEY analysis_key_period_type (analysis_key, period_type)', 'SELECT 1');
+PREPARE lucius_stmt FROM @lucius_ddl;
+EXECUTE lucius_stmt;
+DEALLOCATE PREPARE lucius_stmt;
+
 DROP PROCEDURE lucius_add_column_if_missing;
 
 -- Version tracking (always safe to (re-)stamp — this is the current
--- state of the 3.x line as of this file's last update, Major.SQL = "3.3").
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.3')
-ON DUPLICATE KEY UPDATE setting_value = '3.3';
+-- state of the 3.x line as of this file's last update, Major.SQL = "3.4").
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.4')
+ON DUPLICATE KEY UPDATE setting_value = '3.4';

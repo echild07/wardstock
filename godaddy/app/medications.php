@@ -5,7 +5,7 @@ require_login();
 
 $pdo = get_db();
 $meds = $pdo->query('SELECT * FROM medications ORDER BY name, start_date DESC')->fetchAll();
-$today = date('Y-m-d');
+$today = app_today($pdo); // was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 $active = 'medications';
 
 function med_status($m, $today) {

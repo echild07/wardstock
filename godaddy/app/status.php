@@ -85,7 +85,22 @@ function fmt_component($c) {
                 <?php if (!$row['last_run_at']): ?>
                   <span class="hint">never reported</span>
                 <?php else: ?>
-                  <code><?= htmlspecialchars($row['last_run_at']) ?></code> —
+                  <?php
+                    // last_run_at is a naive MySQL DATETIME with no timezone
+                    // marker — Node-RED writes it from new Date().toISOString()
+                    // (always UTC), so the raw value really is UTC, just
+                    // without anything saying so. Same gap this project hit
+                    // and fixed for the wherewhen charts (Ward, Aug 2026:
+                    // "it looks like their time is in UTC also, not user
+                    // timezone") — display converts client-side to whatever
+                    // timezone the browser is actually in, not a hardcoded
+                    // one; see analysis.php's own <script> for the identical
+                    // reasoning. Reformatted to an explicit ISO8601 UTC
+                    // string (space -> "T", "Z" appended) so JS's Date
+                    // constructor can't misread the naive string as local.
+                    $utcIso = str_replace(' ', 'T', $row['last_run_at']) . 'Z';
+                  ?>
+                  <code class="js-local-time" data-utc="<?= htmlspecialchars($utcIso) ?>"><?= htmlspecialchars($row['last_run_at']) ?> UTC</code> —
                   <?php if ($row['last_status'] === 'success'): ?>
                     ✅ success
                   <?php elseif ($row['last_status'] === 'failed'): ?>
@@ -114,5 +129,19 @@ function fmt_component($c) {
   <p class="hint" style="margin-top:24px;">A <em>failed</em> run and a <em>missing/overdue</em> run are shown differently on purpose (PLAN.md §15) — a failure means it ran and something went wrong; overdue means it hasn't run when it should have, which is itself a distinct signal (a hung flow, HA being down, etc.).</p>
   <p class="hint">Per-endpoint call history: <a href="oura_test.php">Connection test</a>. Per-flow detail: <a href="oura_sync.php">HA Sync Status</a>.</p>
 </div>
+<script>
+// Converts every last_run_at timestamp to the browser's own local
+// timezone (Ward, Aug 2026 — same reasoning as analysis.php's charts:
+// the server doesn't know or guess the viewer's timezone, the browser
+// just knows). data-utc is already an explicit UTC ISO string (built
+// server-side from the naive DATETIME column); if JS never runs for any
+// reason, the raw "... UTC" text already in the element is a correctly-
+// labeled fallback, just less convenient than local time.
+document.querySelectorAll('.js-local-time').forEach(function (el) {
+    var d = new Date(el.dataset.utc);
+    if (isNaN(d.getTime())) return; // leave the UTC fallback text as-is
+    el.textContent = d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+});
+</script>
 </body>
 </html>

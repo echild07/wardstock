@@ -30,7 +30,7 @@ if ($lastSession) {
     $stmt->execute([$sinceDate]);
     $reportDailyLogs = $stmt->fetchAll();
 
-    $daysInPeriod = (int)((strtotime('today') - strtotime($sinceDate)) / 86400) + 1;
+    $daysInPeriod = (int)((strtotime(app_today($pdo)) - strtotime($sinceDate)) / 86400) + 1; // was strtotime('today') — server default, not Ward's actual today (Aug 2026 fix)
 
     $report = [
         'since' => $since,

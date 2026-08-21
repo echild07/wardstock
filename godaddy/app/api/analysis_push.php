@@ -6,12 +6,16 @@
 // actual Flux queries to exist to be verified (PLAN.md build-order
 // convention, CLAUDE.md "Conventions worth knowing").
 //
-// Upsert by (analysis_key, period_type, period_start, period_end,
-// analysis_version) — matches analysis_results' own UNIQUE KEY, so a
-// rerun of the same period+version is a safe overwrite, not a duplicate.
-// Different analysis_version values are kept as separate rows on
-// purpose (PLAN.md §11 "Schedule & caching" — a full recompute after a
-// methodology change lands new rows without deleting old ones).
+// Upsert by (analysis_key, period_type) — matches analysis_results' own
+// UNIQUE KEY, so every run of a given tier updates that tier's one row
+// in place rather than accumulating a new one (Ward, Aug 2026 — real
+// design gap: the key used to also include period_start/period_end,
+// which shift on every run of a rolling-window tier, so every run
+// inserted instead of updating, and analysis_results grew without
+// bound). period_start/period_end/analysis_version still get written
+// (informational — which window this row actually covers, and a manual
+// schema/logic-version marker) but no longer determine insert-vs-update.
+// See the long comment on this table in schema.sql for the full story.
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../auth.php';
 

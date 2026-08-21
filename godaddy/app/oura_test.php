@@ -128,8 +128,8 @@ if ($tokens) {
 // expect) becomes visible directly, rather than looking like "no data."
 $rangeScan = null;
 if (isset($_GET['test']) && $_GET['test'] === 'range_scan' && $tokens) {
-    $rangeStart = $_GET['range_start'] ?? (new DateTime('-14 days'))->format('Y-m-d');
-    $rangeEnd = $_GET['range_end'] ?? date('Y-m-d');
+    $rangeStart = $_GET['range_start'] ?? app_now($pdo)->modify('-14 days')->format('Y-m-d');
+    $rangeEnd = $_GET['range_end'] ?? app_today($pdo);
     $rangeScan = ['start' => $rangeStart, 'end' => $rangeEnd, 'endpoints' => []];
     foreach (['sleep' => 'Sleep', 'daily_activity' => 'Daily Activity', 'daily_readiness' => 'Daily Readiness'] as $key => $label) {
         $resp = oura_api_get($pdo, $key, ['start_date' => $rangeStart, 'end_date' => $rangeEnd]);
@@ -137,8 +137,8 @@ if (isset($_GET['test']) && $_GET['test'] === 'range_scan' && $tokens) {
     }
 }
 
-$defaultRangeStart = (new DateTime('-14 days'))->format('Y-m-d');
-$defaultRangeEnd = date('Y-m-d');
+$defaultRangeStart = app_now($pdo)->modify('-14 days')->format('Y-m-d'); // was server-default DateTime/date() — diagnostic page, low-stakes, fixed for consistency (Aug 2026)
+$defaultRangeEnd = app_today($pdo);
 
 $errorMeanings = [
     'invalid_client' => 'Client ID or Client Secret is wrong — recheck both against your Oura application page.',

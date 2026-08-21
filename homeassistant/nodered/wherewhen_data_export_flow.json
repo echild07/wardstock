@@ -110,8 +110,21 @@
                 "n_wde_write_start_influx"
             ],
             [
-                "n_wde_write_start_influx"
+                "n_wde_mkdir_stderr_warn"
             ],
+            []
+        ]
+    },
+    {
+        "id": "n_wde_mkdir_stderr_warn",
+        "type": "function",
+        "z": "tab_wherewhen_export",
+        "name": "Warn on mkdir stderr (does not continue the pipeline)",
+        "func": "// Only reached via n_wde_mkdir's stderr output -- deliberately NOT\n// wired onward to n_wde_write_start_influx (that was the bug: both\n// stdout and stderr used to feed the same next node, firing the\n// whole list/split/query/write pipeline twice per trigger). Just\n// surfaces whatever mkdir wrote to stderr, if anything, and stops.\nif (msg.payload) node.warn('mkdir stderr (backup dir may not exist): ' + msg.payload);\nreturn null;",
+        "outputs": 1,
+        "x": 950,
+        "y": 40,
+        "wires": [
             []
         ]
     },
@@ -182,7 +195,7 @@
         "type": "function",
         "z": "tab_wherewhen_export",
         "name": "Parse measurement names from CSV response",
-        "func": "// InfluxDB's annotated CSV: lines starting with # are metadata\n// (#datatype/#group/#default), then one real header row (starting with\n// the literal column name, e.g. ',result,table,_value'), then data rows.\n// schema.measurements() returns one column, _value, one measurement name\n// per row — this parse is much simpler than the general case Restore's\n// CSV parser has to handle (see that flow's own function for the fuller\n// version of this same logic).\nconst text = msg.payload || '';\nconst lines = text.split('\\n').map(l => l.trim()).filter(Boolean);\nconst headerLine = lines.find(l => !l.startsWith('#'));\nif (!headerLine) {\n    msg.measurements = [];\n} else {\n    const cols = headerLine.split(',');\n    const valueIdx = cols.indexOf('_value');\n    const dataLines = lines.slice(lines.indexOf(headerLine) + 1).filter(l => !l.startsWith('#'));\n    msg.measurements = dataLines.map(l => l.split(',')[valueIdx]).filter(Boolean);\n}\nflow.set('wde_measurements', msg.measurements);\nif (!msg.measurements.length) {\n    node.warn('No measurements found in bucket — nothing to export this run (empty bucket, or the schema.measurements() query itself needs checking on first real run).');\n    return [null, msg];\n}\nreturn [msg, null];",
+        "func": "// InfluxDB's annotated CSV: lines starting with # are metadata\n// (#datatype/#group/#default), then one real header row (starting with\n// the literal column name, e.g. ',result,table,_value'), then data rows.\n// schema.measurements() returns one column, _value, one measurement name\n// per row — this parse is much simpler than the general case Restore's\n// CSV parser has to handle (see that flow's own function for the fuller\n// version of this same logic).\nconst text = msg.payload || '';\nconst lines = text.split('\\n').map(l => l.trim()).filter(Boolean);\nconst headerLine = lines.find(l => !l.startsWith('#'));\nif (!headerLine) {\n    msg.measurements = [];\n} else {\n    const cols = headerLine.split(',');\n    const valueIdx = cols.indexOf('_value');\n    const dataLines = lines.slice(lines.indexOf(headerLine) + 1).filter(l => !l.startsWith('#'));\n    msg.measurements = dataLines.map(l => l.split(',')[valueIdx]).filter(Boolean);\n}\nflow.set('wde_measurements', msg.measurements);\nnode.warn('Parsed ' + msg.measurements.length + ' measurement(s): ' + JSON.stringify(msg.measurements));\nif (!msg.measurements.length) {\n    node.warn('No measurements found in bucket — nothing to export this run (empty bucket, or the schema.measurements() query itself needs checking on first real run).');\n    return [null, msg];\n}\nreturn [msg, null];",
         "outputs": 2,
         "x": 200,
         "y": 280,
@@ -220,7 +233,7 @@
         "type": "function",
         "z": "tab_wherewhen_export",
         "name": "Build full-range Flux query for this measurement",
-        "func": "const secrets = flow.get('wde_secrets');\nconst measurement = msg.payload; // one measurement name, from the split\nmsg.measurement_name = measurement;\nconst flux = 'from(bucket: \"' + secrets.influxdb_bucket + '\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"' + measurement.replace(/\"/g, '\\\\\"') + '\")';\nmsg.url = secrets.influxdb_url + '/api/v2/query?org=' + encodeURIComponent(secrets.influxdb_org);\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'application/vnd.flux', 'Accept': 'application/csv' };\nmsg.payload = flux;\nreturn msg;",
+        "func": "const secrets = flow.get('wde_secrets');\nlet measurement = msg.payload; // one measurement name, from the split\n\n// Defensive guard (Ward, Aug 2026 -- real bug: this received the\n// ENTIRE measurement list concatenated together instead of one\n// name, building an ENAMETOOLONG filename and killing the whole\n// export run). Root cause not yet confirmed -- see the diagnostic\n// log added in n_wde_parse_measurement_list, and the mkdir\n// double-fire fix on n_wde_mkdir, both aimed at catching/\n// preventing this. This guard's job is narrower: even if a bad\n// value gets this far again, don't let it crash the run -- use a\n// safe placeholder for this one slot and log everything needed to\n// diagnose it, so the other (presumably fine) measurements still\n// export successfully.\nif (typeof measurement !== 'string' || !measurement || measurement.length > 200 || /[,\\n\\r]/.test(measurement)) {\n    const idx = (msg.parts && typeof msg.parts.index === 'number') ? msg.parts.index : 'unknown';\n    node.warn('Bad \"measurement\" value from the split step at index ' + idx + ' -- length ' + (measurement ? measurement.length : 0) + ', preview: ' + JSON.stringify(String(measurement).slice(0, 150)) + '. Using a placeholder so the run can still complete.');\n    measurement = 'invalid_measurement_' + idx;\n}\n\nmsg.measurement_name = measurement;\nconst flux = 'from(bucket: \"' + secrets.influxdb_bucket + '\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"' + measurement.replace(/\"/g, '\\\\\"') + '\")';\nmsg.url = secrets.influxdb_url + '/api/v2/query?org=' + encodeURIComponent(secrets.influxdb_org);\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'application/vnd.flux', 'Accept': 'application/csv' };\nmsg.payload = flux;\nreturn msg;",
         "outputs": 1,
         "x": 730,
         "y": 280,

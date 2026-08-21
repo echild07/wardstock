@@ -4,7 +4,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$startDate = (new DateTime('today'))->modify('-60 days')->format('Y-m-d');
+$startDate = app_now($pdo)->modify('-60 days')->format('Y-m-d'); // was new DateTime('today') — server default, not Ward's actual today (Aug 2026 fix)
 $stmt = $pdo->prepare('SELECT log_date, weight FROM daily_logs WHERE log_date >= ? AND weight IS NOT NULL ORDER BY log_date');
 $stmt->execute([$startDate]);
 $points = $stmt->fetchAll();

@@ -144,8 +144,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
 -- '3.1' during the preferred_timezone addition, Aug 2026 — this baseline
 -- had already gained the 3.1 tables above without the stamp being
 -- updated to match; fixed here.)
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.3')
-ON DUPLICATE KEY UPDATE setting_value = '3.3';
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.4')
+ON DUPLICATE KEY UPDATE setting_value = '3.4';
 
 -- Preferred timezone (Ward, Aug 2026) — see settings.php / upgrade_from_3.0.0.sql's
 -- own comment on this same key for why it exists.
@@ -187,8 +187,26 @@ CREATE TABLE IF NOT EXISTS system_status_reports (
 -- wherewhen's pushed analyses/charts (Fulgrim, PLAN.md §11 "Where results
 -- go"). One flexible table for all ~20 analyses rather than one table
 -- per analysis — result_json holds whatever that analysis's chart page
--- needs. Versioned so a full recompute (PLAN.md §11 "Schedule &
--- caching") can land new rows without deleting old ones.
+-- needs.
+--
+-- One row per (analysis_key, period_type) — bounded at (# analyses) x 4
+-- tiers, ~80 rows, forever (Ward, Aug 2026, caught a real design gap:
+-- the original key also included period_start/period_end, which shift
+-- on every run of a rolling-window tier, so every run inserted a NEW row
+-- instead of updating the old one — analysis_results grew without bound,
+-- and picking "latest computed_at" as the one to display meant whichever
+-- tier ran most recently always won, effectively hiding the others —
+-- daily runs far more often than monthly, so monthly's wider view could
+-- never actually be seen. Dropping period_start/period_end/
+-- analysis_version from the uniqueness fixes both: analysis_push.php's
+-- existing ON DUPLICATE KEY UPDATE now genuinely upserts each tier's row
+-- in place, and analysis.php picks by window-breadth preference
+-- (all > monthly > weekly > daily) rather than recency, so the widest
+-- available tier is always what's shown, regardless of run order.
+-- period_start/period_end/analysis_version stay as informational
+-- columns (which window a given row actually covers, and a manual
+-- schema/logic-version marker), just no longer part of what determines
+-- insert-vs-update.
 CREATE TABLE IF NOT EXISTS analysis_results (
     id INT AUTO_INCREMENT PRIMARY KEY,
     analysis_key VARCHAR(50) NOT NULL,
@@ -199,7 +217,7 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     result_json LONGTEXT NOT NULL,
     computed_at DATETIME NULL,
     pushed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY analysis_period_version (analysis_key, period_type, period_start, period_end, analysis_version)
+    UNIQUE KEY analysis_key_period_type (analysis_key, period_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Attention/reminder snoozes (Fulgrim, feature list §3.2/3.2.0) — one row

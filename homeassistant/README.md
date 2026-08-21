@@ -93,6 +93,8 @@ In Node-RED: Menu → Import → paste the contents of
 `nodered/body_comp_import_flow.json`, `nodered/status_heartbeat_flow.json`,
 and `nodered/system_test_flow.json` (five separate imports).
 
+**Re-importing an updated version of a flow you already have does NOT overwrite it in place — confirmed the hard way (Ward, Aug 2026).** When the incoming JSON's node IDs collide with nodes already on the canvas, Node-RED's default import behavior creates a **second, separate copy** of the tab (new IDs) rather than replacing the original — so after a re-import you can end up with two "wherewhen - Data Export" tabs, the old (still-broken) one and the new (fixed) one, and whichever one's trigger you actually fire is the one that runs. This is exactly what happened when a real fix (`wherewhen_data_export_flow.json`'s file-write nodes) got re-imported and Ward kept hitting the pre-fix error — the old tab was still there, untouched, still wired to the same trigger. **After any re-import, check for a duplicate tab before assuming the update took:** if there are two copies of a flow, open the node you expect to have changed in each and compare — delete the stale one (right-click its tab → Delete), keep the one with the actual change, then Deploy.
+
 **Optional flows, not part of the required setup sequence** — import
 any/all whenever you actually want them, no harm leaving any out until
 then. See each flow's own tab `info` in the Node-RED editor for full

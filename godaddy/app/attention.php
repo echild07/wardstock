@@ -52,15 +52,18 @@ function is_reminder_snoozed($pdo, $key) {
 }
 
 function snooze_reminder($pdo, $key) {
-    $stmt = $pdo->prepare('INSERT IGNORE INTO attention_snoozes (reminder_key, snoozed_on) VALUES (?, CURDATE())');
-    $stmt->execute([$key]);
+    // CURDATE() used to stamp this with MySQL's own server-configured
+    // timezone (real bug, Aug 2026, same class as everything else in
+    // this pass — Ward's day, not the server's, decides which day a
+    // snooze belongs to). Bound param using app_today() instead.
+    $stmt = $pdo->prepare('INSERT IGNORE INTO attention_snoozes (reminder_key, snoozed_on) VALUES (?, ?)');
+    $stmt->execute([$key, app_today($pdo)]);
 }
 
 // Full list of active (unsnoozed) daily-item reminders, today's date.
 // Each: key (snooze identity), label, href (where to go fix it).
 function get_attention_items($pdo) {
-    $today = date('Y-m-d');
-    $items = [];
+    $today = app_today($pdo); // was date('Y-m-d') — server default (UTC), not Ward's actual day (Aug 2026 fix)
 
     // ---- Medicine not fully taken today ----
     $allMeds = $pdo->query("SELECT * FROM medications WHERE med_type = 'scheduled' ORDER BY sort_order")->fetchAll();
@@ -103,8 +106,13 @@ function get_attention_items($pdo) {
     // day's 5pm EoD cutoff (today only — yesterday's cutoff has obviously
     // already passed) ----
     $schedules = $pdo->query('SELECT * FROM therapy_schedules WHERE active = 1')->fetchAll();
-    $yesterday = date('Y-m-d', strtotime('-1 day'));
-    $pastCutoffToday = (int)date('G') >= 17; // 5pm local server time
+    // Both were server-clock bugs (Aug 2026 fix) — $yesterday used
+    // date('Y-m-d', strtotime('-1 day')) (server "today" minus a day,
+    // not Ward's), and the cutoff check used date('G') (server's current
+    // hour, mislabeled "local" in the old comment — it never was).
+    $appNow = app_now($pdo);
+    $yesterday = (clone $appNow)->modify('-1 day')->format('Y-m-d');
+    $pastCutoffToday = (int)$appNow->format('G') >= 17; // 5pm Ward's actual local time
     foreach ([$today => $pastCutoffToday, $yesterday => true] as $day => $applies) {
         if (!$applies) continue;
         foreach (therapy_due_types($schedules, $day) as $type) {

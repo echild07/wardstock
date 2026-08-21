@@ -57,9 +57,15 @@ $typeMeta = [
 ];
 
 // ---------- 7-day summary: current date first, going back 6 days ----------
+// Real bug, Aug 2026 (Ward: "it shows Friday the 21st, when it is 9:27pm
+// here") — 'today' with no timezone uses PHP's server default (UTC on
+// GoDaddy), not Ward's actual day. app_today() (db.php) uses his real
+// preferred_timezone setting instead — same fix as the wherewhen
+// engine's own day-grouping, same underlying gap.
 $days = [];
+$appToday = app_now($pdo);
 for ($i = 0; $i <= 6; $i++) {
-    $days[] = (new DateTime('today'))->modify("-$i days")->format('Y-m-d');
+    $days[] = (clone $appToday)->modify("-$i days")->format('Y-m-d');
 }
 $oldestDay = min($days);
 
@@ -238,7 +244,7 @@ function som_pill($value, $href, $somLabels, $icon) {
 
         $exerciseOk = $log && ($log['steps'] !== null || $log['exercise_minutes'] !== null || $log['standing_minutes'] !== null);
 
-        $isToday = ($day === date('Y-m-d'));
+        $isToday = ($day === $days[0]); // $days[0] is Ward's real today (app_now() above), not date('Y-m-d')'s server default
         $dayLabel = date('D, M j', strtotime($day)) . ($isToday ? ' (today)' : '');
         $dueTypes = therapy_due_types($schedules, $day);
     ?>

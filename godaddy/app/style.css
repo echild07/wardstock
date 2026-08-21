@@ -90,6 +90,21 @@ h1 { font-size: 1.4rem; margin: 0; }
 .badge { background: var(--accent); color: white; font-size: 0.8rem; padding: 3px 9px; border-radius: 999px; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .tag { font-size: 0.78rem; padding: 3px 8px; border-radius: 999px; background: var(--none); color: #fff; }
+
+/* Analysis page period selector (Ward, Aug 2026 — "the user will need
+   to be able to select the period"). Pill-link row, same shape as .tag
+   but interactive/clickable with a clear active state. */
+.period-selector { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; }
+.period-chip {
+  font-size: 0.82rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  text-decoration: none;
+}
+.period-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .lvl-mild { background: var(--mild); }
 .lvl-moderate { background: var(--moderate); }
 .lvl-severe { background: var(--severe); }
@@ -171,7 +186,10 @@ textarea { resize: vertical; }
 /* ---------- Section nav ---------- */
 .mainnav {
   display: flex;
-  gap: 4px;
+  gap: 10px; /* wider than a text-link nav needs — most of these are now
+                32x32 icon tap targets (Ward, Aug 2026: "space out"
+                for mobile), and 4px between them was too tight to tap
+                reliably on a phone. */
   overflow-x: auto;
   margin-bottom: 22px;
   border-bottom: 1px solid var(--border);

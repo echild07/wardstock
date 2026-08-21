@@ -62,7 +62,7 @@ $prefillDate = $_GET['date'] ?? null;
 $prefillType = $_GET['type'] ?? null;
 $dateValue = $session
     ? date('Y-m-d\TH:i', strtotime($session['session_date']))
-    : ($prefillDate ? $prefillDate . 'T18:00' : date('Y-m-d\TH:i'));
+    : ($prefillDate ? $prefillDate . 'T18:00' : app_now($pdo)->format('Y-m-d\TH:i')); // fallback was date('Y-m-d\TH:i') — server default, not Ward's actual now (Aug 2026 fix)
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
 $subActive = 'therapy';
 ?>

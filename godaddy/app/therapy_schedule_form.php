@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 function sel($row, $key, $option, $default) { $cur = $row ? ($row[$key] ?? $default) : $default; return $cur === $option ? 'selected' : ''; }
-$startVal = $sched ? date('Y-m-d', strtotime($sched['start_date'])) : date('Y-m-d');
+$startVal = $sched ? date('Y-m-d', strtotime($sched['start_date'])) : app_today($pdo); // fallback was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 $freqVal = $sched ? (int)$sched['frequency_days'] : 7;
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
 $subActive = 'therapy';

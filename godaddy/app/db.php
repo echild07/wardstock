@@ -13,6 +13,34 @@ function get_db() {
     return $pdo;
 }
 
+// "What is 'now'/'today', for real" — GoDaddy's PHP has no timezone ever
+// set (date_default_timezone_set() is never called anywhere in this
+// codebase — confirmed by grep, not assumed), so bare date()/new
+// DateTime('now')/strtotime('today') all silently use PHP's own default,
+// which is UTC on GoDaddy shared hosting. Real bug, Aug 2026 (Ward: "on
+// the front page it shows Friday the 21st, when it is 9:27pm here" —
+// past midnight UTC, still evening the day before in Eastern). Anywhere
+// "today"/"now" is used to decide WHICH DATA to show or query (not just
+// formatting an already-known past timestamp for display — that's a
+// separate, client-side-JS concern, see analysis.php/status.php's own
+// js-local-time handling) needs Ward's actual calendar day, which needs
+// his preferred_timezone (settings.php/app_settings — same setting the
+// wherewhen engine's day-grouping already uses, PLAN.md §11), not
+// whatever the server happens to default to. Falls back to
+// America/New_York if the setting's never been saved, matching every
+// other consumer of this same setting.
+function app_now($pdo) {
+    $tz = get_setting($pdo, 'preferred_timezone') ?: 'America/New_York';
+    try {
+        return new DateTime('now', new DateTimeZone($tz));
+    } catch (Exception $e) {
+        return new DateTime('now', new DateTimeZone('America/New_York'));
+    }
+}
+function app_today($pdo) {
+    return app_now($pdo)->format('Y-m-d');
+}
+
 // Is a scheduled medication actually due on a given date? Checks both that
 // the prescription is currently active (start/end date) AND that this
 // specific day lines up with its recurrence (daily/weekly/biweekly/etc via

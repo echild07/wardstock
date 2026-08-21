@@ -17,7 +17,7 @@ if ($id) {
 // checklist must reflect what was actually valid on that date — not "today" —
 // so backfilling a past day shows the right medications for that day.
 $prefillDate = $_GET['date'] ?? null;
-$dateValue = $log ? date('Y-m-d', strtotime($log['log_date'])) : ($prefillDate ?: date('Y-m-d'));
+$dateValue = $log ? date('Y-m-d', strtotime($log['log_date'])) : ($prefillDate ?: app_today($pdo)); // fallback was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 
 $stmt = $pdo->prepare("SELECT * FROM medications WHERE med_type = 'scheduled' ORDER BY sort_order, name");
 $stmt->execute();

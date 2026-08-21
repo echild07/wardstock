@@ -13,7 +13,7 @@ if (!oura_is_configured()) {
 }
 
 $tokens = oura_get_tokens($pdo);
-$date = $_GET['date'] ?? date('Y-m-d');
+$date = $_GET['date'] ?? app_today($pdo); // fallback was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 
 // ---------- Actually perform the pull-and-populate ----------
 $tokenExpired = false;

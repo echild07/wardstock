@@ -51,19 +51,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proposed_event_id'], 
 
 $pendingEvents = $pdo->query("SELECT * FROM proposed_events WHERE status = 'pending' ORDER BY proposed_at DESC")->fetchAll();
 
-// One row per analysis_key: latest computed_at, highest analysis_version.
-// (Small table for now — a straightforward correlated subquery is plenty;
-// revisit if this ever needs to scale past a few hundred rows.)
-$latest = $pdo->query('
-    SELECT r.* FROM analysis_results r
-    INNER JOIN (
-        SELECT analysis_key, MAX(analysis_version) AS max_version
-        FROM analysis_results GROUP BY analysis_key
-    ) v ON v.analysis_key = r.analysis_key AND v.max_version = r.analysis_version
-    ORDER BY r.computed_at DESC
-')->fetchAll();
+// One row per (analysis_key, period_type) — the database itself now
+// guarantees this (analysis_results' UNIQUE KEY, schema.sql), so no
+// dedup query is needed here at all; this table is bounded at roughly
+// (# analyses) x 4 tiers, small enough to just fetch everything.
+//
+// Which tier to SHOW, per analysis_key, is a real design question Ward
+// raised directly (Aug 2026): "if daily/weekly/monthly and manual all
+// are run, won't the last one be shown, so if daily was run last, it
+// will only show a day with no way to get monthly?" — yes, exactly, and
+// that was true even before today's dedup bug fix, since daily runs far
+// more often than monthly/weekly/all and would almost always be the
+// most-recently-computed row. Picking by recency was never right here.
+//
+// Two-part answer: (1) a page-wide period selector (?period=) lets Ward
+// explicitly choose a tier — "the user will need to be able to select
+// the period" — rather than the page silently deciding for him; (2) the
+// default (?period= absent) auto-picks the WIDEST available window
+// regardless of which ran most recently (all=since Aug 2025 >
+// monthly=400d > weekly=180d > daily=90d), falling back to whatever
+// tiers actually have data yet, so a fresh install showing only "daily"
+// still works fine until the wider tiers get their first scheduled run.
+// If a SPECIFIC tier is requested but a given analysis_key has no data
+// for it yet, that card just shows "No data yet" for this key rather
+// than silently substituting a different tier — an explicit choice
+// should show exactly what was asked for, not something else.
+$validPeriods = ['all', 'monthly', 'weekly', 'daily'];
+$selectedPeriod = in_array($_GET['period'] ?? '', $validPeriods, true) ? $_GET['period'] : null;
+$tierPreference = ['all' => 0, 'monthly' => 1, 'weekly' => 2, 'daily' => 3]; // lower = shown preferentially
+$allResults = $pdo->query('SELECT * FROM analysis_results')->fetchAll();
 $byKey = [];
-foreach ($latest as $row) { $byKey[$row['analysis_key']] = $row; }
+foreach ($allResults as $row) {
+    $key = $row['analysis_key'];
+    if ($selectedPeriod !== null) {
+        if ($row['period_type'] === $selectedPeriod) $byKey[$key] = $row;
+        continue;
+    }
+    $rank = $tierPreference[$row['period_type']] ?? 99;
+    if (!isset($byKey[$key]) || $rank < ($tierPreference[$byKey[$key]['period_type']] ?? 99)) {
+        $byKey[$key] = $row;
+    }
+}
 
 // Raw-data export for debugging a specific chart (Ward, Aug 2026 —
 // requested on the bedtime/wake-time trend and sleep-stage hypnogram
@@ -137,6 +165,22 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
 
   <p class="hint">Computed by <code>wherewhen</code> on the Home Assistant side and pushed here — nothing on this page runs locally. See <a href="status.php">Status</a> if a chart looks stale.</p>
 
+  <?php
+    // Period selector (Ward, Aug 2026 — "the user will need to be able
+    // to select the period"). Plain links with a query param, not a
+    // form/JS toggle — simplest thing that reloads the whole page
+    // showing every card at the chosen tier, and works identically
+    // whether JS is enabled or not.
+    $periodLabels = ['daily' => 'Daily (90d)', 'weekly' => 'Weekly (180d)', 'monthly' => 'Monthly (400d)', 'all' => 'All-data'];
+  ?>
+  <div class="period-selector">
+    <span class="hint">Period:</span>
+    <a class="period-chip<?= $selectedPeriod === null ? ' active' : '' ?>" href="analysis.php">Auto (widest available)</a>
+    <?php foreach ($periodLabels as $p => $label): ?>
+      <a class="period-chip<?= $selectedPeriod === $p ? ' active' : '' ?>" href="analysis.php?period=<?= urlencode($p) ?>"><?= htmlspecialchars($label) ?></a>
+    <?php endforeach; ?>
+  </div>
+
   <?php if ($pendingEvents): ?>
     <h3 class="section-label">Proposed events awaiting your review</h3>
     <p class="hint">wherewhen thinks these might be real events based on a pattern it found. Confirm turns it into a real incident and helps wherewhen trust its own pattern-matching more next time; deny keeps it on record as something to look into, without creating an incident.</p>
@@ -144,7 +188,7 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
       <?php foreach ($pendingEvents as $pe): ?>
         <div class="card">
           <div class="card-top">
-            <span class="card-date"><?= htmlspecialchars(date('M j, Y g:i A', strtotime($pe['proposed_at']))) ?></span>
+            <span class="card-date"><code class="js-local-time" data-utc="<?= htmlspecialchars(str_replace(' ', 'T', $pe['proposed_at']) . 'Z') ?>"><?= htmlspecialchars($pe['proposed_at']) ?> UTC</code></span>
             <span class="tag"><?= htmlspecialchars($pe['analysis_key']) ?></span>
           </div>
           <p class="card-trigger"><?= htmlspecialchars($pe['description']) ?></p>
@@ -176,7 +220,9 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
           <div class="analysis-card-top">
             <span class="badge">#<?= $a['n'] ?></span>
             <?php if ($result): ?>
-              <span class="tag lvl-mild">Last computed <?= htmlspecialchars(date('M j, g:i A', strtotime($result['computed_at']))) ?></span>
+              <span class="tag lvl-mild"><?= htmlspecialchars(ucfirst($result['period_type'])) ?> · computed <code class="js-local-time" data-utc="<?= htmlspecialchars(str_replace(' ', 'T', $result['computed_at']) . 'Z') ?>"><?= htmlspecialchars($result['computed_at']) ?> UTC</code></span>
+            <?php elseif ($selectedPeriod !== null): ?>
+              <span class="tag">No <?= htmlspecialchars($selectedPeriod) ?> data yet — try Auto or another period</span>
             <?php else: ?>
               <span class="tag">No data yet</span>
             <?php endif; ?>
@@ -370,12 +416,23 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
     document.querySelectorAll('.js-bedtime-chart').forEach(renderBedtimeChart);
     document.querySelectorAll('.js-hypnogram-chart').forEach(renderHypnogram);
 
+    // "Last computed" timestamps, converted to the browser's own local
+    // timezone (Ward, Aug 2026 — same raw-UTC gap as the Status page's
+    // last_run_at, same fix: data-utc is an explicit UTC ISO string, and
+    // this replaces the UTC-labeled fallback text with a local-time
+    // version once JS runs).
+    document.querySelectorAll('.js-local-time').forEach(function (el) {
+        var d = new Date(el.dataset.utc);
+        if (isNaN(d.getTime())) return;
+        el.textContent = d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    });
+
     // Custom day/value tooltip for every chart (Ward, Aug 2026 — "I would
     // like to see the day and value if I hover over it... used on a
     // mobile device"). Runs after the two render calls above so it also
     // picks up the bedtime/hypnogram charts' own <title> elements, not
     // just the server-rendered trend-chart bars (av_trend_svg() in
-    // analysis_render.php already puts a <title> on every bar/point —
+    // analysis_render.php already puts a <title> on every bar/point) —
     // this replaces the browser's native SVG title tooltip rather than
     // duplicating it: native tooltips are desktop-hover-only, slow to
     // appear, and have poor/inconsistent support on touch devices.

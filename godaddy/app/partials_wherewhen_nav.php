@@ -13,5 +13,5 @@ function wherewhen_nav_class($key, $subActive) { return $key === $subActive ? 'n
   <a class="<?= wherewhen_nav_class('status', $subActive) ?> icon" href="status.php" title="Status" aria-label="Status">💓</a>
   <a class="<?= wherewhen_nav_class('export', $subActive) ?> icon" href="export.php" title="Export" aria-label="Export">📤</a>
   <a class="<?= wherewhen_nav_class('therapy', $subActive) ?> icon" href="therapy.php" title="Therapy" aria-label="Therapy">🛋️</a>
-  <a class="<?= wherewhen_nav_class('settings', $subActive) ?>" href="settings.php">Settings</a>
+  <a class="<?= wherewhen_nav_class('settings', $subActive) ?> icon" href="settings.php" title="Settings" aria-label="Settings">⚙️</a>
 </nav>

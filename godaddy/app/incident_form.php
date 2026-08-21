@@ -91,7 +91,7 @@ $allMeds = $pdo->query('SELECT id, name, dosage FROM medications ORDER BY sort_o
 $prefillDate = $_GET['date'] ?? null;
 $contextDate = ($formData && !empty($formData['occurred_at']))
     ? date('Y-m-d', strtotime($formData['occurred_at']))
-    : ($prefillDate ?: date('Y-m-d'));
+    : ($prefillDate ?: app_today($pdo)); // fallback was date('Y-m-d') — server default; JS below still upgrades to the browser's real local time when it can (Aug 2026: this is the safety-net path when it can't)
 
 // Occurred/ended values. For a genuinely new incident (no id, no error yet),
 // these are seeded with a safe PHP-side default (context date + current server
@@ -101,7 +101,7 @@ $contextDate = ($formData && !empty($formData['occurred_at']))
 if ($formData && !empty($formData['occurred_at'])) {
     $occurredValue = date('Y-m-d\TH:i', strtotime($formData['occurred_at']));
 } else {
-    $occurredValue = $contextDate . 'T' . date('H:i');
+    $occurredValue = $contextDate . 'T' . app_now($pdo)->format('H:i'); // was date('H:i') — server clock; same JS-overrides-this-when-it-can safety net as $contextDate above
 }
 $endedValue = ($formData && !empty($formData['ended_at'])) ? date('Y-m-d\TH:i', strtotime($formData['ended_at'])) : '';
 

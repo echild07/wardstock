@@ -87,7 +87,7 @@ $nameVal = $med ? $med['name'] : ($copyFrom ? $copyFrom['name'] : '');
 $typeVal = $med ? $med['med_type'] : ($copyFrom ? $copyFrom['med_type'] : 'scheduled');
 $cadenceVal = $med ? $med['cadence'] : ($copyFrom ? $copyFrom['cadence'] : 'daily');
 $freqVal = $med ? (int)$med['frequency_days'] : ($copyFrom ? (int)$copyFrom['frequency_days'] : 1);
-$startVal = $med ? date('Y-m-d', strtotime($med['start_date'])) : date('Y-m-d');
+$startVal = $med ? date('Y-m-d', strtotime($med['start_date'])) : app_today($pdo); // fallback was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 $endVal = $med && $med['end_date'] ? date('Y-m-d', strtotime($med['end_date'])) : '';
 
 $active = 'medications';
