@@ -655,24 +655,19 @@
     },
     {
         "id": "n_oura_split_summaries",
-        "type": "split",
+        "type": "function",
         "z": "tab_oura_sync",
-        "name": "Split: one message per day's summary",
-        "splt": "\\n",
-        "spltType": "str",
-        "arraySplt": 1,
-        "arraySpltType": "len",
-        "stream": false,
-        "addname": "",
-        "property": "godaddy_summaries",
-        "comment": "Self-heal fix (PLAN.md §1 TODO, Aug 2026) — msg.godaddy_summaries is always a non-empty array now (see n_oura_process_all), one element per day needing a GoDaddy push. Paired with n_oura_join_summaries downstream via Node-RED's standard msg.parts mechanism, so exactly one message continues to n_oura_job_success once every day's push has gone out, not once per day.",
+        "name": "Split: one message per day's summary (manual fan-out, Aug 2026 split-node fix)",
+        "func": "// Manual fan-out, not Node-RED's core `split` node -- real bug,\n// Aug 2026: the generic split node failed to correctly isolate each\n// array element when targeting a custom-named message property\n// (confirmed via wherewhen_data_export_flow.json's own diagnostic\n// node.warn output on Ward's real instance -- every downstream\n// message was receiving the same unrelated raw text instead of its\n// own array element). The one split node in this project using the\n// DEFAULT \"payload\" property (analysis_engine_flow.json's\n// n_ae_split) is confirmed working via real usage, which is what\n// narrowed this down to custom-property targeting specifically,\n// not split() in general. msg.parts is built by hand to match\n// exactly what Node-RED's own split node documents, so the paired\n// join node (mode: \"auto\") downstream needs no changes.\nconst items = msg.godaddy_summaries || [];\nconst batchId = 'batch_' + Date.now() + '_' + Math.random().toString(36).slice(2);\n// Wrapped in an EXTRA array layer -- real bug caught, Aug 2026: a\n// function node with a SINGLE output that returns a flat array of\n// messages has that array interpreted as \"one message per output\n// port,\" so with only 1 output Node-RED took just the first message\n// and silently dropped the rest (confirmed: exactly one file -- the\n// first measurement -- was ever written, no error). [[...]] is the\n// documented way to send many messages down ONE output: the outer\n// array is per-output-port, the inner array is the messages for that\n// port.\nreturn [items.map((item, i) => {\n    const m = Object.assign({}, msg, { payload: item });\n    m.parts = { id: batchId, type: 'array', index: i, count: items.length };\n    return m;\n})];",
+        "outputs": 1,
         "x": 350,
         "y": 400,
         "wires": [
             [
                 "n_oura_push_godaddy"
             ]
-        ]
+        ],
+        "comment": "Self-heal fix (PLAN.md §1 TODO, Aug 2026) — msg.godaddy_summaries is always a non-empty array now (see n_oura_process_all), one element per day needing a GoDaddy push. Paired with n_oura_join_summaries downstream via Node-RED's standard msg.parts mechanism, so exactly one message continues to n_oura_job_success once every day's push has gone out, not once per day."
     },
     {
         "id": "n_oura_push_godaddy",
