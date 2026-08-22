@@ -11,6 +11,11 @@
 //   correlation-analysis engine — new incident category, medication
 //   dosage history, night-waking capture, ~20 analysis charts, and the
 //   new "Where When" nav section. See homeassistant/PLAN.md §11/§18-20.
+//   Codename order decided ahead of time (Ward, Aug 2026), so the next
+//   several major bumps already have their name picked before whatever
+//   triggers each one is even known: 4 = "Drew", 5 = "Aidan", 6 = "Zoe",
+//   7 = "Bean", 8 = "Scout". Use the next unused name in this list when
+//   MAJOR next bumps — don't invent a new one.
 // - APP_VERSION_SQL: bump ONLY when a release actually changes something
 //   in sql/ (a new/changed schema.sql, a new alter_*.sql). Resets CODE
 //   to 0. This is the ONLY number the database needs to know about —
