@@ -1,0 +1,259 @@
+[
+  {
+    "id": "tab_godaddy_backup_test",
+    "type": "tab",
+    "label": "GoDaddy Backup - Test & Validate",
+    "disabled": false,
+    "info": "Companion test flow for godaddy_backup_flow.json (PLAN.md §2's standing rule: every live flow gets one — this one was originally missing, flagged as a gap, now built). Exercises the SQLite-serialization half of that flow in isolation, against a hand-built fixture standing in for a pull_manual_data.php response, using the SAME row-building code (record_type filter + SQL string-escaping + JSON.stringify) duplicated verbatim from n_gb_process — not a reimplementation that could quietly drift from what the real flow actually runs.\n\nWhat it checks, against a throwaway scratch table (godaddy_backup_test) in the same scratch DB file sqlite_test_flow.json already uses (/share/lucius_sqlite_test.db) — never touches the real /share/lucius_godaddy_backup.db:\n1. Round-trip fidelity: five in-scope record types (incident, daily_log, therapy_session, medication, medication_dosage_history), each carrying deliberately awkward content — embedded single quotes, double quotes, a literal SQL-comment sequence, a newline, and non-ASCII text — survive CREATE→escape→INSERT OR REPLACE→SELECT→JSON.parse exactly unchanged.\n2. Scope filtering: an ecg_recording fixture and a made-up future record_type are correctly EXCLUDED from what gets written — confirms the real flow's inScope allowlist actually works, not just that it exists in the code.\n3. Natural-key behavior: two fixture rows sharing the same (record_type, source_id) — simulating a re-run backing up the same GoDaddy id twice — collapse to one row (INSERT OR REPLACE), not two.\n\nDoes NOT exercise the HTTP/secrets/InfluxDB half of the real flow — that logic is identical to godaddy_pull_flow.json's own already-relied-upon pattern, not new here. Also does not call the real GoDaddy API or write real InfluxDB points, by design — this is offline/isolated, same as every other companion test flow in this project.\n\nUNTESTED like every other flow in this project — the SQLite CREATE/INSERT/SELECT/DROP sequence and node-red-node-sqlite's query/result shape ARE separately confirmed against Ward's real instance (sqlite_test_flow.json Part A), so this flow's own mechanics carry high confidence; what's specifically unverified is this flow itself, end to end, on a real deploy."
+  },
+  {
+    "id": "n_gbt_trigger",
+    "type": "inject",
+    "z": "tab_godaddy_backup_test",
+    "name": "Click to run test",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 170,
+    "y": 80,
+    "wires": [
+      [
+        "n_gbt_build_fixture"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_build_fixture",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Build fixture records",
+    "func": "// Stands in for a pull_manual_data.php response's records array.\n// Deliberately awkward content per record: embedded single quotes\n// (SQL-escaping risk), double quotes, a '--' sequence (SQL-comment\n// risk if anything ever built a query without parameterization), a\n// newline, and non-ASCII text (em-dash) -- exactly the kind of thing\n// that's easy to get right for a normal string and wrong for one with\n// a stray quote in it.\nconst records = [\n    { record_type: 'incident', id: 101, category: 'anxiety', occurred_at: '2026-08-01 09:00:00',\n      trigger_context: \"Didn't sleep well -- woke at 3am\", free_notes: 'Quote test: she said \"call the doctor\"' },\n    { record_type: 'daily_log', id: 202, log_date: '2026-08-01', weight: 181.4, caffeine_servings: 2, alcohol_drinks: 0,\n      free_notes: 'Line one\\nLine two' },\n    { record_type: 'therapy_session', id: 303, session_date: '2026-08-01', session_type: 'individual',\n      summary: \"Discussed Ward's progress -- good week\" },\n    { record_type: 'medication', id: 404, name: \"Ward's test med (100mg)\", start_date: '2026-01-01', dosage: '100mg' },\n    { record_type: 'medication_dosage_history', id: 505, medication_name: 'Test Med', changed_at: '2026-08-01',\n      old_dosage: '50mg', new_dosage: '100mg', notes: 'Dose doubled -- discussed with doctor' },\n    // Out-of-scope on purpose -- must NOT appear in the backup table.\n    { record_type: 'ecg_recording', id: 606, recorded_at: '2026-08-01 10:00:00', device_product: 'KardiaMobile' },\n    { record_type: 'some_future_type', id: 707, whatever: 'should be ignored' },\n    // Duplicate source_id for an in-scope type -- simulates re-backing-up\n    // the same GoDaddy row twice; INSERT OR REPLACE should collapse this\n    // to one row, not two, in the final count.\n    { record_type: 'incident', id: 101, category: 'anxiety', occurred_at: '2026-08-01 09:00:00',\n      trigger_context: 'UPDATED on second pass', free_notes: null }\n];\nmsg.fixture_records = records;\nreturn msg;",
+    "outputs": 1,
+    "x": 430,
+    "y": 80,
+    "wires": [
+      [
+        "n_gbt_build_rows"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_build_rows",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Build SQLite rows (same logic as n_gb_process)",
+    "func": "// Verbatim copy of the row-building half of godaddy_backup_flow.json's\n// n_gb_process — deliberately duplicated so this test actually exercises\n// what the real flow runs, not a paraphrase of it. If that node's logic\n// ever changes, this needs updating too (same maintenance cost every\n// other companion test flow in this project already accepts).\nconst inScope = { incident: true, daily_log: true, therapy_session: true, medication: true, medication_dosage_history: true };\nfunction escSql(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nconst now = new Date().toISOString();\nconst rows = [];\nmsg.fixture_records.forEach(r => {\n    if (!inScope[r.record_type]) return;\n    const sourceId = String((r.id !== undefined && r.id !== null) ? r.id : (Date.now() + '_' + Math.random()));\n    rows.push('(' + escSql(r.record_type) + ',' + escSql(sourceId) + ',' + escSql(JSON.stringify(r)) + ',' + escSql(now) + ')');\n});\nmsg.sqlite_row_count = rows.length;\nmsg.sqlite_insert_sql = rows.length\n    ? 'INSERT OR REPLACE INTO godaddy_backup_test (record_type, source_id, data_json, backed_up_at) VALUES ' + rows.join(',')\n    : null;\nnode.warn('Built ' + rows.length + ' SQL row(s) from ' + msg.fixture_records.length + ' fixture record(s) (2 out-of-scope filtered; expect these ' + rows.length + ' tuples to collapse to 5 distinct rows once INSERT OR REPLACE resolves the duplicate incident id).');\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 80,
+    "wires": [
+      [
+        "n_gbt_create_table_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_create_table_prep",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Prep: CREATE TABLE IF NOT EXISTS (scratch)",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS godaddy_backup_test (\" +\n    \"record_type TEXT NOT NULL, source_id TEXT NOT NULL, data_json TEXT NOT NULL, \" +\n    \"backed_up_at TEXT NOT NULL, PRIMARY KEY (record_type, source_id))\";\nreturn msg;",
+    "outputs": 1,
+    "x": 170,
+    "y": 160,
+    "wires": [
+      [
+        "n_gbt_create_table_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_create_table_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_backup_test",
+    "name": "sqlite: CREATE TABLE",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 430,
+    "y": 160,
+    "wires": [
+      [
+        "n_gbt_delete_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_delete_prep",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Prep: DELETE (clean slate from any prior run)",
+    "func": "msg.topic = 'DELETE FROM godaddy_backup_test';\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 160,
+    "wires": [
+      [
+        "n_gbt_delete_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_delete_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_backup_test",
+    "name": "sqlite: DELETE",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 170,
+    "y": 220,
+    "wires": [
+      [
+        "n_gbt_insert_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_insert_prep",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Prep: INSERT built rows",
+    "func": "msg.topic = msg.sqlite_insert_sql;\nreturn msg;",
+    "outputs": 1,
+    "x": 430,
+    "y": 220,
+    "wires": [
+      [
+        "n_gbt_insert_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_insert_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_backup_test",
+    "name": "sqlite: INSERT",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 730,
+    "y": 220,
+    "wires": [
+      [
+        "n_gbt_select_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_select_prep",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Prep: SELECT *",
+    "func": "msg.topic = 'SELECT record_type, source_id, data_json, backed_up_at FROM godaddy_backup_test ORDER BY record_type, source_id';\nreturn msg;",
+    "outputs": 1,
+    "x": 170,
+    "y": 280,
+    "wires": [
+      [
+        "n_gbt_select_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_select_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_backup_test",
+    "name": "sqlite: SELECT",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 430,
+    "y": 280,
+    "wires": [
+      [
+        "n_gbt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_verify",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Verify round-trip + prep cleanup",
+    "func": "const rows = Array.isArray(msg.payload) ? msg.payload : [];\nconst problems = [];\nconst results = [];\n\nfunction check(label, cond) { results.push((cond ? 'PASS' : 'FAIL') + ' — ' + label); if (!cond) problems.push(label); }\n\ncheck('exactly 5 rows written (5 in-scope types; ecg_recording + unknown type filtered; duplicate incident id collapsed)', rows.length === 5);\n\nconst byKey = {};\nrows.forEach(r => { byKey[r.record_type + ':' + r.source_id] = r; });\n\ncheck('ecg_recording row absent', !byKey['ecg_recording:606']);\ncheck('some_future_type row absent', !byKey['some_future_type:707']);\n\nconst incRow = byKey['incident:101'];\ncheck('incident row present', !!incRow);\nif (incRow) {\n    let parsed;\n    try { parsed = JSON.parse(incRow.data_json); } catch (e) { parsed = null; }\n    check('incident JSON parses back', !!parsed);\n    check('duplicate source_id collapsed to the SECOND write (INSERT OR REPLACE, not two rows)', parsed && parsed.trigger_context === 'UPDATED on second pass');\n    check('null field survives round-trip as null', parsed && parsed.free_notes === null);\n}\n\nconst dailyRow = byKey['daily_log:202'];\nif (dailyRow) {\n    const parsed = JSON.parse(dailyRow.data_json);\n    check('daily_log embedded newline survives exactly', parsed.free_notes === 'Line one\\nLine two');\n    check('daily_log numeric fields survive as numbers, not strings', typeof parsed.weight === 'number' && parsed.weight === 181.4);\n}\n\nconst therapyRow = byKey['therapy_session:303'];\nif (therapyRow) {\n    const parsed = JSON.parse(therapyRow.data_json);\n    check('therapy_session embedded single quote + double-dash survives', parsed.summary === \"Discussed Ward's progress -- good week\");\n}\n\nconst medRow = byKey['medication:404'];\nif (medRow) {\n    const parsed = JSON.parse(medRow.data_json);\n    check('medication name with apostrophe survives', parsed.name === \"Ward's test med (100mg)\");\n}\n\nconst doseRow = byKey['medication_dosage_history:505'];\nif (doseRow) {\n    const parsed = JSON.parse(doseRow.data_json);\n    check('medication_dosage_history notes with double-dash survives', parsed.notes === 'Dose doubled -- discussed with doctor');\n}\n\nmsg.test_results = results;\nmsg.test_problems = problems;\nmsg.topic = 'DROP TABLE IF EXISTS godaddy_backup_test';\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 280,
+    "wires": [
+      [
+        "n_gbt_cleanup_db"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_cleanup_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_backup_test",
+    "name": "sqlite: DROP TABLE (cleanup)",
+    "mydb": "cfg_sqlite_scratch",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 170,
+    "y": 340,
+    "wires": [
+      [
+        "n_gbt_report"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_report",
+    "type": "function",
+    "z": "tab_godaddy_backup_test",
+    "name": "Build report",
+    "func": "const problems = msg.test_problems || [];\nconst summary = (problems.length ? ('❌ ' + problems.length + ' PROBLEM(S) FOUND') : '✅ ALL CHECKS PASSED') ;\nnode.status({ fill: problems.length ? 'red' : 'green', shape: 'dot', text: summary });\nmsg.payload = {\n    summary: summary,\n    results: msg.test_results,\n    problems: problems,\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 430,
+    "y": 340,
+    "wires": [
+      [
+        "n_gbt_debug_result"
+      ]
+    ]
+  },
+  {
+    "id": "n_gbt_debug_result",
+    "type": "debug",
+    "z": "tab_godaddy_backup_test",
+    "name": "RESULT",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 690,
+    "y": 340,
+    "wires": []
+  },
+  {
+    "id": "cfg_sqlite_scratch",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Scratch test DB (throwaway)",
+    "db": "/share/lucius_sqlite_test.db",
+    "mode": "RWC"
+  }
+]

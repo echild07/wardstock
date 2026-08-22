@@ -301,3 +301,293 @@ function build_export_records($pdo, $since, $types) {
 
     return $data;
 }
+
+// The other direction from build_export_records() — takes a "records"
+// array in the exact same shape (whatever record_type-tagged rows a
+// pull_manual_data.php/export.php response contains) and upserts each one
+// back into its table. Originally lived entirely inside import.php (the
+// human file-upload page); extracted here (Aug 2026) so
+// api/bulk_restore.php — a new token-authenticated endpoint for Home
+// Assistant's own restore-from-local-backup flow — can call the exact
+// same merge-safe logic instead of a second implementation that could
+// quietly drift from it. import.php now just handles the file upload and
+// calls this.
+//
+// Owns its own transaction: the whole batch commits together or not at
+// all, same guarantee import.php always gave ("nothing was saved" on any
+// failure partway through). Throws on failure after rolling back — the
+// caller decides how to present that (import.php shows it as a page
+// error; bulk_restore.php returns it as a 500 JSON response).
+function import_records($pdo, array $records) {
+    $medLookup = [];
+    foreach ($pdo->query('SELECT id, name FROM medications')->fetchAll() as $m) {
+        $medLookup[$m['name']] = (int)$m['id'];
+    }
+
+    $counts = [
+        'incident' => ['inserted' => 0, 'skipped' => 0],
+        'daily_log' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
+        'therapy_session' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
+        'medication' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
+        'medication_dosage_history' => ['inserted' => 0, 'skipped' => 0],
+        'ecg_recording' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
+    ];
+    $unmatchedMeds = [];
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($records as $rec) {
+            $type = $rec['record_type'] ?? null;
+
+            if ($type === 'incident') {
+                if (empty($rec['occurred_at'])) { $counts['incident']['skipped']++; continue; }
+                // stomach_sensation/flu_symptoms_sensation/lethargy_sensation/
+                // related_medication_id (Aug 2026, real bug found while
+                // converting a mysqldump backup for restore) were added to
+                // the medical incident category after this column list was
+                // first written and never added here — a medical-category
+                // incident carrying real values in any of these would have
+                // silently lost them on import/restore. related_medication_id
+                // is imported as-is (unlike incident_push.php's name-based
+                // resolution) since a straight import/restore is expected to
+                // target the SAME database the export came from, where the
+                // id is still valid.
+                $cols = ['category', 'occurred_at', 'ended_at', 'trigger_context', 'thoughts_before',
+                         'chest_sensation', 'arm_sensation', 'shoulder_sensation', 'headache_sensation',
+                         'shaking', 'stomach_sensation', 'flu_symptoms_sensation', 'lethargy_sensation',
+                         'anxiety_intensity', 'duration_minutes', 'nitroglycerin_taken',
+                         'what_helped_recovery', 'differed_from_pattern', 'medical_evaluation',
+                         'medical_evaluation_notes', 'related_medication_id', 'free_notes'];
+                $fields = [];
+                foreach ($cols as $c) { $fields[$c] = array_key_exists($c, $rec) ? $rec[$c] : null; }
+                if (empty($fields['category'])) $fields['category'] = 'anxiety'; // NOT NULL column
+                $colList = implode(', ', array_keys($fields));
+                $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                $stmt = $pdo->prepare("INSERT INTO incidents ($colList) VALUES ($placeholders)");
+                $stmt->execute($fields);
+                $counts['incident']['inserted']++;
+
+            } elseif ($type === 'daily_log') {
+                if (empty($rec['log_date'])) { $counts['daily_log']['skipped']++; continue; }
+
+                $cols = ['sleep_duration_hrs', 'sleep_efficiency', 'resting_hr', 'hrv', 'weight',
+                         'steps', 'exercise_minutes', 'standing_minutes', 'activity_exertion', 'caffeine',
+                         'caffeine_servings', 'alcohol', 'alcohol_drinks', 'medication_notes',
+                         'mood_rating', 'state_of_mind', 'free_notes'];
+
+                $existing = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date = ?');
+                $existing->execute([$rec['log_date']]);
+                $existingRow = $existing->fetch();
+
+                // Merge, don't overwrite: a partial import (e.g. weight-only history) should
+                // never null out fields it simply doesn't mention on a day that already has
+                // fuller data. Only fields actually present (and non-null) in the import
+                // record replace what's there; everything else keeps its existing value.
+                $fields = ['log_date' => $rec['log_date']];
+                foreach ($cols as $c) {
+                    if (array_key_exists($c, $rec) && $rec[$c] !== null) {
+                        $fields[$c] = $rec[$c];
+                    } elseif ($existingRow) {
+                        $fields[$c] = $existingRow[$c];
+                    } else {
+                        $fields[$c] = null;
+                    }
+                }
+
+                // Medications: only touched if the import record actually specifies them —
+                // an empty/absent medications_taken in the source is not the same thing as
+                // "confirmed nothing was taken," so don't let it erase real existing data.
+                if (array_key_exists('medications_taken', $rec)) {
+                    $medIds = [];
+                    foreach (($rec['medications_taken'] ?? []) as $name) {
+                        if (isset($medLookup[$name])) $medIds[] = $medLookup[$name];
+                        else $unmatchedMeds[$name] = true;
+                    }
+                    $fields['medications_taken_json'] = json_encode(array_values($medIds));
+                    $fields['medications_all_taken'] = array_key_exists('medications_all_taken', $rec)
+                        ? $rec['medications_all_taken']
+                        : ($existingRow['medications_all_taken'] ?? null);
+                } elseif ($existingRow) {
+                    $fields['medications_taken_json'] = $existingRow['medications_taken_json'];
+                    $fields['medications_all_taken'] = $existingRow['medications_all_taken'];
+                } else {
+                    $fields['medications_taken_json'] = json_encode([]);
+                    $fields['medications_all_taken'] = null;
+                }
+
+                if ($existingRow) {
+                    $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("UPDATE daily_logs SET $set WHERE id = :id");
+                    $fields['id'] = $existingRow['id'];
+                    $stmt->execute($fields);
+                    $counts['daily_log']['updated']++;
+                } else {
+                    $colList = implode(', ', array_keys($fields));
+                    $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("INSERT INTO daily_logs ($colList) VALUES ($placeholders)");
+                    $stmt->execute($fields);
+                    $counts['daily_log']['inserted']++;
+                }
+
+            } elseif ($type === 'therapy_session') {
+                if (empty($rec['session_date'])) { $counts['therapy_session']['skipped']++; continue; }
+                $cols = ['session_type', 'summary', 'insights', 'homework', 'mood_before', 'mood_after', 'free_notes'];
+
+                $existing = $pdo->prepare('SELECT * FROM therapy_sessions WHERE session_date = ? AND session_type = ?');
+                $existing->execute([$rec['session_date'], $rec['session_type'] ?? 'individual']);
+                $existingRow = $existing->fetch();
+
+                $fields = ['session_date' => $rec['session_date']];
+                foreach ($cols as $c) {
+                    if (array_key_exists($c, $rec) && $rec[$c] !== null) {
+                        $fields[$c] = $rec[$c];
+                    } elseif ($existingRow) {
+                        $fields[$c] = $existingRow[$c];
+                    } else {
+                        $fields[$c] = ($c === 'session_type') ? 'individual' : null;
+                    }
+                }
+
+                if ($existingRow) {
+                    $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("UPDATE therapy_sessions SET $set WHERE id = :id");
+                    $fields['id'] = $existingRow['id'];
+                    $stmt->execute($fields);
+                    $counts['therapy_session']['updated']++;
+                } else {
+                    $colList = implode(', ', array_keys($fields));
+                    $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("INSERT INTO therapy_sessions ($colList) VALUES ($placeholders)");
+                    $stmt->execute($fields);
+                    $counts['therapy_session']['inserted']++;
+                }
+
+            } elseif ($type === 'medication') {
+                // Added for the Lucius project's HA disaster-recovery
+                // archive (see homeassistant/PLAN.md §4) — this record
+                // type never appeared in exports before medications
+                // were added to api/pull_manual_data.php. Matched by
+                // (name, start_date) — a reliable natural key for one
+                // specific dosage era of one medication, unlike
+                // incidents which have none.
+                if (empty($rec['name']) || empty($rec['start_date'])) { $counts['medication']['skipped']++; continue; }
+                $cols = ['dosage', 'med_type', 'cadence', 'frequency_days', 'end_date', 'sort_order'];
+
+                $existing = $pdo->prepare('SELECT * FROM medications WHERE name = ? AND start_date = ?');
+                $existing->execute([$rec['name'], $rec['start_date']]);
+                $existingRow = $existing->fetch();
+
+                $fields = ['name' => $rec['name'], 'start_date' => $rec['start_date']];
+                foreach ($cols as $c) {
+                    if (array_key_exists($c, $rec) && $rec[$c] !== null) {
+                        $fields[$c] = $rec[$c];
+                    } elseif ($existingRow) {
+                        $fields[$c] = $existingRow[$c];
+                    } else {
+                        $fields[$c] = ($c === 'med_type') ? 'scheduled' : (($c === 'frequency_days') ? 1 : null);
+                    }
+                }
+
+                if ($existingRow) {
+                    $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("UPDATE medications SET $set WHERE id = :id");
+                    $fields['id'] = $existingRow['id'];
+                    $stmt->execute($fields);
+                    $counts['medication']['updated']++;
+                } else {
+                    $colList = implode(', ', array_keys($fields));
+                    $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("INSERT INTO medications ($colList) VALUES ($placeholders)");
+                    $stmt->execute($fields);
+                    $counts['medication']['inserted']++;
+                }
+
+            } elseif ($type === 'medication_dosage_history') {
+                // Fulgrim/wherewhen (PLAN.md §11 #8). medication_id
+                // isn't portable across a reimport — medications
+                // above are matched/inserted by (name, start_date),
+                // which can assign a different id on this database
+                // than the source had. Resolve the target row via
+                // medication_name + changed_at instead, since
+                // medication_form.php always sets changed_at equal
+                // to the new dosage era's own start_date. Insert-only
+                // table (no update path exists), so a matching
+                // existing row just means "already imported."
+                if (empty($rec['medication_name']) || empty($rec['changed_at'])) {
+                    $counts['medication_dosage_history']['skipped']++; continue;
+                }
+                $medRow = $pdo->prepare('SELECT id FROM medications WHERE name = ? AND start_date = ?');
+                $medRow->execute([$rec['medication_name'], substr($rec['changed_at'], 0, 10)]);
+                $medId = $medRow->fetchColumn();
+                if (!$medId) { $counts['medication_dosage_history']['skipped']++; continue; }
+
+                $existing = $pdo->prepare('SELECT id FROM medication_dosage_history WHERE medication_id = ? AND changed_at = ?');
+                $existing->execute([$medId, $rec['changed_at']]);
+                if ($existing->fetch()) { $counts['medication_dosage_history']['skipped']++; continue; }
+
+                $stmt = $pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
+                $stmt->execute([$medId, $rec['old_dosage'] ?? null, $rec['new_dosage'] ?? '', $rec['changed_at'], $rec['notes'] ?? null]);
+                $counts['medication_dosage_history']['inserted']++;
+
+            } elseif ($type === 'ecg_recording') {
+                // Aug 2026 (EKG_DESIGN.md) — matched by (recorded_at,
+                // device_product), the same reasonable-natural-key
+                // idea as therapy_session's (session_date,
+                // session_type). related_incident_id is deliberately
+                // NOT imported — an incident id isn't portable across
+                // databases (same reason incidents' own
+                // related_medication_id is excluded from ITS import
+                // above), and there's no source-side natural key to
+                // re-resolve it through. The PDF artifact itself
+                // never travels through this path either — exports
+                // only ever carry the recording summary, per
+                // build_export_records()'s own comment.
+                if (empty($rec['recorded_at'])) { $counts['ecg_recording']['skipped']++; continue; }
+                $cols = ['device_product', 'lead_configuration', 'duration_seconds', 'average_heart_rate_bpm',
+                         'determination_code', 'determination_text', 'signal_quality', 'recording_reason',
+                         'symptoms_present', 'symptoms_json', 'activity_before', 'rest_minutes_before',
+                         'notes', 'clinician_reviewed', 'clinician_interpretation', 'clinician_reviewer_name',
+                         'clinician_reviewed_at'];
+
+                $existing = $pdo->prepare('SELECT * FROM ecg_recordings WHERE recorded_at = ? AND device_product = ?');
+                $existing->execute([$rec['recorded_at'], $rec['device_product'] ?? 'KardiaMobile']);
+                $existingRow = $existing->fetch();
+
+                $fields = ['recorded_at' => $rec['recorded_at'], 'device_product' => $rec['device_product'] ?? 'KardiaMobile'];
+                foreach ($cols as $c) {
+                    if ($c === 'device_product') continue; // already set above
+                    if (array_key_exists($c, $rec) && $rec[$c] !== null) {
+                        $fields[$c] = $rec[$c];
+                    } elseif ($existingRow) {
+                        $fields[$c] = $existingRow[$c];
+                    } else {
+                        $fields[$c] = ($c === 'lead_configuration') ? 'single_lead_i'
+                            : ($c === 'signal_quality' ? 'unknown'
+                            : ($c === 'recording_reason' ? 'periodic_baseline'
+                            : ($c === 'symptoms_present' || $c === 'clinician_reviewed' ? 0 : null)));
+                    }
+                }
+
+                if ($existingRow) {
+                    $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("UPDATE ecg_recordings SET $set WHERE id = :id");
+                    $fields['id'] = $existingRow['id'];
+                    $stmt->execute($fields);
+                    $counts['ecg_recording']['updated']++;
+                } else {
+                    $colList = implode(', ', array_keys($fields));
+                    $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("INSERT INTO ecg_recordings ($colList) VALUES ($placeholders)");
+                    $stmt->execute($fields);
+                    $counts['ecg_recording']['inserted']++;
+                }
+            }
+        }
+
+        $pdo->commit();
+        return ['counts' => $counts, 'unmatchedMeds' => array_keys($unmatchedMeds)];
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}

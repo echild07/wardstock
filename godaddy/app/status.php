@@ -36,6 +36,9 @@ function fmt_component($c) {
         'wherewhen_export' => 'wherewhen Data Export (manual + weekly Sun 3am)',
         'wherewhen_restore' => 'wherewhen Data Restore (manual/on-demand)',
         'analysis_engine' => 'wherewhen Analysis Engine (daily/weekly/monthly + manual all-data)',
+        'godaddy_backup' => 'GoDaddy Backup — SQLite (daily 3am + manual)',
+        'godaddy_restore' => 'GoDaddy Restore — from SQLite (manual/on-demand)',
+        'godaddy_restore_from_file' => 'GoDaddy Restore — from export file (manual/on-demand)',
     ];
     return $labels[$c] ?? htmlspecialchars($c);
 }
