@@ -361,6 +361,15 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 2.5rem;
+    /* Fix for a real bug: print pagination was splitting this block mid-
+       way — the last log line and closing paragraph fell onto their own
+       page with nothing else on it, since nothing told the renderer to
+       keep the block together. break-inside (plus the two older aliases
+       for engine compatibility) makes the whole .closer move to the next
+       page as one piece instead of splitting. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+    -webkit-column-break-inside: avoid;
   }
 
   .log-card {
