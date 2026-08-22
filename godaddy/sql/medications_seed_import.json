@@ -1,0 +1,13 @@
+{
+  "records": [
+    { "record_type": "medication", "name": "Amlodipine", "dosage": "2.5mg", "med_type": "scheduled", "cadence": "daily", "frequency_days": 1, "start_date": "2025-08-12", "end_date": null, "sort_order": 1 },
+    { "record_type": "medication", "name": "Aspirin", "dosage": "81mg", "med_type": "scheduled", "cadence": "daily", "frequency_days": 1, "start_date": "2025-08-12", "end_date": null, "sort_order": 2 },
+    { "record_type": "medication", "name": "Ezetimibe", "dosage": "10mg", "med_type": "scheduled", "cadence": "daily", "frequency_days": 1, "start_date": "2025-08-12", "end_date": null, "sort_order": 3 },
+    { "record_type": "medication", "name": "Rosuvastatin", "dosage": "", "med_type": "scheduled", "cadence": "daily", "frequency_days": 1, "start_date": "2025-08-12", "end_date": null, "sort_order": 4 },
+    { "record_type": "medication", "name": "Duloxetine", "dosage": "20mg", "med_type": "scheduled", "cadence": "daily", "frequency_days": 1, "start_date": "2025-08-12", "end_date": null, "sort_order": 5 },
+    { "record_type": "medication", "name": "Evolocumab (Repatha)", "dosage": "140mg", "med_type": "scheduled", "cadence": "biweekly", "frequency_days": 14, "start_date": "2025-08-14", "end_date": null, "sort_order": 6 },
+    { "record_type": "medication", "name": "Semaglutide (Wegovy)", "dosage": "", "med_type": "scheduled", "cadence": "weekly", "frequency_days": 7, "start_date": "2025-08-14", "end_date": null, "sort_order": 7 },
+    { "record_type": "medication", "name": "Nitroglycerin", "dosage": "0.4mg", "med_type": "as_needed", "cadence": "as needed", "frequency_days": 1, "start_date": "2025-08-12", "end_date": null, "sort_order": 8 }
+  ],
+  "source_note": "Replaces the hardcoded medications INSERT that used to live in sql/schema.sql and sql/reset_clean.sql (removed Aug 2026 — see those files' own comments for why: a wrong baked-in start_date for Repatha/Wegovy caused real duplicate rows on restore). This is now the canonical medications seed for a clean install: import via import.php (Export/Import page) or the godaddy_restore_from_file_flow.json Node-RED flow (copy to /share/lucius_restore_import.json, fire its manual trigger) after running schema.sql or reset_clean.sql. Repatha/Wegovy correctly start 2025-08-14 (Thursday) — all other entries start 2025-08-12 (Tuesday), matching Ward's real medical history (see ForWard/wardstock_restore_from_sql_backup.json, the source this was cross-checked against)."
+}

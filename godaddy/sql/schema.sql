@@ -85,15 +85,19 @@ CREATE TABLE IF NOT EXISTS medication_dosage_history (
     FOREIGN KEY (medication_id) REFERENCES medications(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO medications (name, dosage, med_type, cadence, frequency_days, start_date, sort_order) VALUES
-    ('Amlodipine', '2.5mg', 'scheduled', 'daily', 1, '2025-08-12', 1),
-    ('Aspirin', '81mg', 'scheduled', 'daily', 1, '2025-08-12', 2),
-    ('Ezetimibe', '10mg', 'scheduled', 'daily', 1, '2025-08-12', 3),
-    ('Rosuvastatin', '', 'scheduled', 'daily', 1, '2025-08-12', 4),
-    ('Duloxetine', '20mg', 'scheduled', 'daily', 1, '2025-08-12', 5),
-    ('Evolocumab (Repatha)', '140mg', 'scheduled', 'biweekly', 14, '2025-08-12', 6),
-    ('Semaglutide (Wegovy)', '', 'scheduled', 'weekly', 7, '2025-08-12', 7),
-    ('Nitroglycerin', '0.4mg', 'as_needed', 'as needed', 1, '2025-08-12', 8);
+-- Medications are NOT seeded here (Aug 2026 — removed a hardcoded personal
+-- INSERT that lived in this file for years). Real bug that came from it,
+-- live: the seed had Repatha/Wegovy at 2025-08-12 instead of their real
+-- 2025-08-14 (Thursday) start, and restoring Ward's actual wardstock.sql
+-- backup (which correctly has 2025-08-14) created duplicate rows instead
+-- of updating the seeded one, since import_records()'s medication match
+-- key is (name, start_date). README.md had already documented "go fix
+-- Wegovy/Repatha's date after install" as a known gotcha for years without
+-- the underlying seed ever being corrected — removing it outright, not
+-- just fixing the date, so a wrong personal default can't silently ship
+-- again. After a clean install, import your real medication list via
+-- Import (import.php) or the godaddy_restore_from_file_flow.json Node-RED
+-- flow — see godaddy/README.md's setup steps.
 
 CREATE TABLE IF NOT EXISTS therapy_sessions (
     id INT AUTO_INCREMENT PRIMARY KEY,

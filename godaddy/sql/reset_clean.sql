@@ -77,15 +77,11 @@ CREATE TABLE IF NOT EXISTS medications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO medications (name, dosage, med_type, cadence, frequency_days, start_date, sort_order) VALUES
-    ('Amlodipine', '2.5mg', 'scheduled', 'daily', 1, '2025-08-12', 1),
-    ('Aspirin', '81mg', 'scheduled', 'daily', 1, '2025-08-12', 2),
-    ('Ezetimibe', '10mg', 'scheduled', 'daily', 1, '2025-08-12', 3),
-    ('Rosuvastatin', '', 'scheduled', 'daily', 1, '2025-08-12', 4),
-    ('Duloxetine', '20mg', 'scheduled', 'daily', 1, '2025-08-12', 5),
-    ('Evolocumab (Repatha)', '140mg', 'scheduled', 'biweekly', 14, '2025-08-12', 6),
-    ('Semaglutide (Wegovy)', '', 'scheduled', 'weekly', 7, '2025-08-12', 7),
-    ('Nitroglycerin', '0.4mg', 'as_needed', 'as needed', 1, '2025-08-12', 8);
+-- Medications are NOT seeded here (Aug 2026 — same removal as schema.sql,
+-- see that file's comment in this same spot for the full story of the
+-- real bug this hardcoded personal seed caused). Import your real
+-- medication list after this script runs — Import (import.php) or the
+-- godaddy_restore_from_file_flow.json Node-RED flow, see godaddy/README.md.
 
 CREATE TABLE IF NOT EXISTS therapy_sessions (
     id INT AUTO_INCREMENT PRIMARY KEY,

@@ -28,18 +28,18 @@ This folder (`godaddy/`) is one of two pieces in the overall **Lucius** project 
 
 - **`app/`** — every file that actually runs the site *except* `config.php`. Upload the *contents* of this folder directly into `public_html/Wardstock/` (not the `app` folder itself — its files belong flat in your site folder, same level as everything else). **Safe to blindly re-upload every file in here on every update** — it never contains your real credentials.
 - **`config/`** — just `config.php` (your real DB/Oura credentials) and a `.htaccess` blocking direct web access to it. Upload this **once**, as its own subfolder — `public_html/Wardstock/config/` (keep the folder, don't flatten it like `app/`). **Never re-upload this folder as part of a routine update** — that's the entire point of splitting it out: a blanket "upload everything" can't accidentally overwrite your real settings with the blank template, since it lives somewhere that kind of update never touches.
-- **`sql/`** — every `.sql` file. Never uploaded via FTP — paste these into phpMyAdmin's SQL tab instead. `schema.sql`/`reset_clean.sql` are for a fresh install. `upgrade_from_<major>.0.0.sql` is for an existing install with real data — one cumulative, safe-to-re-run file per major version line (see "Upgrading" below), not a growing pile of per-release fragments.
+- **`sql/`** — every `.sql` file, plus `medications_seed_import.json`. Never uploaded via FTP — paste the `.sql` files into phpMyAdmin's SQL tab instead. `schema.sql`/`reset_clean.sql` are for a fresh install. `upgrade_from_<major>.0.0.sql` is for an existing install with real data — one cumulative, safe-to-re-run file per major version line (see "Upgrading" below), not a growing pile of per-release fragments. `medications_seed_import.json` is a real medication list (Ward's own, correct dosage-cadence dates included) to import through `import.php` after a fresh install — medications used to be a hardcoded `INSERT` baked into `schema.sql`/`reset_clean.sql` themselves; removed Aug 2026 after a wrong seeded date for Repatha/Wegovy caused real duplicate rows when a database restore didn't match it. Importing explicitly, and reviewably, replaces that.
 - **`setup-delete-after-use/`** — `setup.php` and `reset_password.php`. Upload these into `public_html/Wardstock/` alongside `app/`'s contents *only when you're about to use one of them*, then **delete it from the server immediately after** — leaving either reachable is a real security hole, since neither requires knowing the current password to act.
 - **`demo/`** — optional kiosk-style walkthrough with synthetic sample data, no real login needed. Its own subfolder — `public_html/Wardstock/demo/` — same "not flattened" pattern as `config/`. Fully inert until you set it up; see `demo/README.md`.
 
 ## Setup (fresh install — no existing data)
 
 1. In cPanel, go to **MySQL Databases**, create a database + user with **All Privileges**.
-2. In phpMyAdmin, run `sql/reset_clean.sql` (drops-if-exists and recreates every table, seeds the `medications` table from your medical journal, and records the current `db_version`).
+2. In phpMyAdmin, run `sql/reset_clean.sql` (drops-if-exists and recreates every table, and records the current `db_version` — tables start empty, including `medications`, see step 6).
 3. Upload everything from `app/` into `public_html/Wardstock/` (match your existing folder casing — Linux hosting is case-sensitive).
 4. Upload `config/` as its own subfolder — `public_html/Wardstock/config/` — keeping the folder structure intact (this is the one exception to "everything goes in flat"). Edit `config/config.php` with your `DB_HOST`/`DB_NAME`/`DB_USER`/`DB_PASS`, and set `APP_SECRET` to a random string.
 5. Upload `setup-delete-after-use/setup.php` into `public_html/Wardstock/`, visit it to create your login, then **delete it from the server**.
-6. Log in at `login.php`.
+6. Log in at `login.php`, then go to **Import** (under Where When → Export) and import `sql/medications_seed_import.json` to seed your real medication list — correct dosage-cadence dates included, so there's no post-install date to fix by hand. (Alternatively, HA's `godaddy_restore_from_file_flow.json` Node-RED flow can do this same import — copy the file to `/share/lucius_restore_import.json` and fire its manual trigger.)
 
 ## Upgrading an existing install (you have real data)
 
@@ -50,8 +50,6 @@ At most **two** files to run in phpMyAdmin, no matter how many releases you're b
 - **A future 3.x.x line** would add its own `sql/upgrade_from_3.0.0.sql`, run after the 2.x.x one, same pattern.
 
 All additive only, never touching existing incidents/daily logs/medications. Then re-upload the changed files from `app/` — safe to upload the whole folder blindly, since `config.php` isn't in there anymore. **Never re-upload the `config/` folder** as part of a routine update; it's only touched during initial setup or if you're deliberately changing a credential. Check `debug.php` afterward to confirm the app's schema revision (Major.SQL, not the full version) agrees with the database's.
-
-**After running the medication-frequency migration specifically**, go to **Medications** and check Wegovy and Repatha: their due-date calculation anchors to `start_date`, and the seed date may not land on your actual dose day. Edit each one and set `start_date` to a real date you took a dose so the weekly/biweekly cycle lines up correctly.
 
 ## Pages
 
