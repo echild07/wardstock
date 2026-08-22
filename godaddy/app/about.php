@@ -41,6 +41,7 @@ $dbVersion = get_setting($pdo, 'db_version');
     <legend>What this is</legend>
     <p>WardStock — "taking stock of Ward." A private, single-user health log for anxiety and cardiac incidents, daily health tracking, medications, and therapy — built to be exact when it matters and simple enough to reach for in the moment.</p>
     <p>Part of <strong>LeeWard</strong>. This app is the always-reachable piece you actually open. A separate, home-based engine (also nicknamed wherewhen) on Home Assistant handles Oura sync, analysis, and backup — nothing raw leaves the home network. LeeWard’s manufacturing product, a different codebase, lives at <a href="../wherewhen/login.php">/wherewhen/</a>.</p>
+    <p class="hint"><a href="marketing.html">See the LeeWard / WardStock flyer →</a></p>
   </fieldset>
 
   <fieldset>

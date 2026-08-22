@@ -512,6 +512,17 @@
     color: var(--steel);
   }
 
+  /* Engine Room's cadence badges ("Weekly Sun 3am + Manual") run much
+     longer than the Chart Room's "#17" reference numbers — same .ref-row
+     grid, just a wider first column so the badge doesn't wrap into a
+     ransom-note sliver. */
+  #engine-room .ref-row { grid-template-columns: 150px 1fr; }
+  #engine-room .ref-num {
+    font-size: 0.72rem;
+    line-height: 1.3;
+    padding-top: 0.2rem;
+  }
+
   @media (max-width: 640px) {
     .hero, .bearing, .manifest-header, .manifest, .harbor-section, .signals, .closer, .reference-section, footer {
       padding-left: 1.4rem;
@@ -788,6 +799,88 @@
       <p class="reference-lede">Oura itself already sorts sessions into a few kinds: a real overnight sleep, a shorter confirmed nap, a late-evening nap credited to the next day, and — usefully — sessions Ward reviewed and rejected as a false alarm (the ring mainly tracks movement on the hand it's worn on, so sitting still at a desk for long enough can occasionally get misread as a nap). Only the real-overnight kind counts as "the night" for these charts; false alarms and short naps are left out, and if more than one real overnight session somehow exists for one calendar night, the longer one wins.</p>
       <p class="reference-lede">Bedtime is simply when that session started. Wake time is Oura's own answer for when it truly ended — sustained time out of bed, not just the first stir — used directly whenever the device provides it. A brief middle-of-the-night wake-up that leads right back to sleep is the device's own call, not something wherewhen merges or splits; it just reads whatever boundaries the device already decided on. Any reading clearly outside what's physically possible (a negative duration, an efficiency over 100%) is dropped before it's ever considered, on any device.</p>
     </div>
+  </section>
+
+  <!-- ENGINE ROOM: operational flows reference -->
+  <section class="reference-section" id="engine-room">
+    <div class="eyebrow">The Engine Room</div>
+    <h2><img src="wherewhen-logo.png" alt="" width="34" height="34" class="wherewhen-mark"> What keeps the ship running.</h2>
+    <p class="reference-lede">Every chart in the Chart Room is fed by one of these — the standing crew of automated jobs that run quietly at harbor, on the wherewhen engine, whether or not anyone's looking. "Runs" is how often; a few are deliberately hands-on-the-wheel only, for moments too consequential to leave to a timer.</p>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Bringing data in</div>
+
+      <div class="ref-row">
+        <div class="ref-num">15 min</div>
+        <div><div class="ref-name">GoDaddy Pull</div><div class="ref-detail">Pulls incidents, Daily Log, and Therapy entries down from WardStock as they're logged — feeds the charts, and doubles as a running disaster-recovery archive.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Every 4h</div>
+        <div><div class="ref-name">Oura Sync</div><div class="ref-detail">Pulls sleep, readiness, and activity data from the ring, then pushes the same summary WardStock understands back up — anchored to 10am so the previous night's sleep is caught promptly.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Daily, ~noon</div>
+        <div><div class="ref-name">Body Composition Import</div><div class="ref-detail">Watches for a fresh export from the smart scale, folds every metric it reports into the trend, and pushes just the day's weight up to WardStock.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Manual</div>
+        <div><div class="ref-name">Medical History Import</div><div class="ref-detail">Watches for structured medical-history records and turns each into a proper cardiac/medical incident — a one-time on-ramp for history that predates WardStock itself.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Manual</div>
+        <div><div class="ref-name">Oura Backfill</div><div class="ref-detail">A deliberate, wide historical pull for a chosen date range — the full-fidelity version of what Oura Sync only ever captures one day at a time.</div></div>
+      </div>
+    </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Turning it into charts</div>
+
+      <div class="ref-row">
+        <div class="ref-num">Daily / Weekly / Monthly + Manual</div>
+        <div><div class="ref-name">wherewhen Analysis Engine</div><div class="ref-detail">Computes all 20 analyses in the Chart Room and pushes each result back to the Analysis page — daily at ~12:15pm, weekly Sunday 4am, monthly on the 1st, plus an on-demand all-history run.</div></div>
+      </div>
+    </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Keeping watch</div>
+
+      <div class="ref-row">
+        <div class="ref-num">15 min</div>
+        <div><div class="ref-name">Status Heartbeat</div><div class="ref-detail">Checks in on every other flow's last run and reports one consolidated "is everything actually working" snapshot — the signal behind WardStock's own System Status page.</div></div>
+      </div>
+    </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">Keeping a spare</div>
+
+      <div class="ref-row">
+        <div class="ref-num">Daily 3am + Manual</div>
+        <div><div class="ref-name">GoDaddy Backup</div><div class="ref-detail">Mirrors WardStock's full current state — incidents, Daily Log, Therapy, Medications, dosage history — into a local copy at harbor, so it exists somewhere besides the one hosted database.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Weekly Sun 3am + Manual</div>
+        <div><div class="ref-name">wherewhen Data Export</div><div class="ref-detail">Backs up everything that only ever lived in the analysis engine itself — the high-fidelity Oura archive, body composition, computed results — so none of it is a total loss if the engine ever needs rebuilding.</div></div>
+      </div>
+    </div>
+
+    <div class="ref-group">
+      <div class="ref-group-title">In case of emergency — manual only, by design</div>
+
+      <div class="ref-row">
+        <div class="ref-num">Manual</div>
+        <div><div class="ref-name">GoDaddy Restore</div><div class="ref-detail">Pushes GoDaddy Backup's local copy back up to WardStock — the recovery half of "keeping a spare," for if the hosted database itself is ever lost.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Manual</div>
+        <div><div class="ref-name">GoDaddy Restore (from file)</div><div class="ref-detail">Same recovery, from an outside backup file instead of the local copy — for restoring from an export that predates GoDaddy Backup ever having run.</div></div>
+      </div>
+      <div class="ref-row">
+        <div class="ref-num">Manual</div>
+        <div><div class="ref-name">wherewhen Data Restore</div><div class="ref-detail">Rebuilds the analysis engine's own data from a wherewhen Data Export backup — for a freshly rebuilt engine, not a routine restore.</div></div>
+      </div>
+    </div>
+
+    <p class="reference-lede" style="margin-top:2rem;">Every one of these runs entirely at harbor — nothing here calls out to WardStock except to read or write the exact fields it already understands, and nothing raw ever leaves the home network.</p>
   </section>
 
   <footer>
