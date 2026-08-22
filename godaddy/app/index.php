@@ -20,6 +20,15 @@ $pendingEventCount = get_pending_event_count($pdo);
 $incCount = (int)$pdo->query('SELECT COUNT(*) c FROM incidents')->fetch()['c'];
 $dailyCount = (int)$pdo->query('SELECT COUNT(*) c FROM daily_logs')->fetch()['c'];
 $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fetch()['c'];
+// Guarded, unlike the counts above: ecg_recordings is new (Aug 2026) and
+// this dashboard must keep working on any install where the SQL
+// migration hasn't been run yet — not a real 500-on-clean-deploy risk we
+// need twice in one project (see login.php's own health check).
+try {
+    $ecgCount = (int)$pdo->query('SELECT COUNT(*) c FROM ecg_recordings')->fetch()['c'];
+} catch (Throwable $e) {
+    $ecgCount = 0;
+}
 
 // combined recent-activity feed across all three tables
 $recent = $pdo->query("
@@ -305,6 +314,14 @@ function som_pill($value, $href, $somLabels, $icon) {
       </div>
       <h2>Therapy</h2>
       <p>Session notes, insights, homework, recovery/evaluation.</p>
+    </a>
+    <a class="hub-card" href="ecg.php">
+      <div class="hub-card-top">
+        <span class="hub-icon tag-ecg">🫀</span>
+        <span class="hub-count"><?= $ecgCount ?></span>
+      </div>
+      <h2>EKG</h2>
+      <p>Kardia recordings — result, symptoms/context, original PDF.</p>
     </a>
   </div>
 

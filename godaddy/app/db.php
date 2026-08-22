@@ -253,6 +253,31 @@ function build_export_records($pdo, $since, $types) {
         foreach ($stmt->fetchAll() as $row) { $row['record_type'] = 'therapy_session'; $data['records'][] = $row; }
     }
 
+    if (in_array('ecg_recordings', $types)) {
+        // Metadata only — the PDF itself (ecg_artifacts.file_blob) is
+        // deliberately never included here. This mirrors EKG_DESIGN.md's
+        // own artifact-vs-summary split (artifacts need authenticated,
+        // audited download; only the recording summary rides along in
+        // bulk sync) even though this app doesn't yet have the doc's full
+        // artifact download audit trail — no reason to make the 15-minute
+        // HA pull carry binary PDFs regardless.
+        //
+        // Own try/catch, unlike every other block above — ecg_recordings
+        // is new (Aug 2026) and this whole function otherwise fails as one
+        // unit (a thrown exception here would take incidents/daily_logs/
+        // therapy_sessions down with it). On any install where the SQL
+        // migration hasn't been run yet, skip EKG rather than lose the
+        // rest of a disaster-recovery pull to a table that doesn't exist.
+        try {
+            $sql = 'SELECT * FROM ecg_recordings' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY recorded_at';
+            $stmt = $pdo->prepare($sql);
+            if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
+            foreach ($stmt->fetchAll() as $row) { $row['record_type'] = 'ecg_recording'; $data['records'][] = $row; }
+        } catch (Throwable $e) {
+            error_log('build_export_records: ecg_recordings skipped — ' . $e->getMessage());
+        }
+    }
+
     if (in_array('medication_dosage_history', $types)) {
         // Insert-only table (medication_form.php only ever INSERTs here,
         // never UPDATEs), so unlike medications a since-filter on

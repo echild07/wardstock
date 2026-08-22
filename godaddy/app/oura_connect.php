@@ -24,7 +24,7 @@ if (!oura_is_configured()) {
       <ol class="hint" style="padding-left:20px;">
         <li>Go to <a href="https://cloud.ouraring.com/oauth/applications" target="_blank">cloud.ouraring.com/oauth/applications</a> and create a new application.</li>
         <li>Set its redirect URI to exactly: <code><?= htmlspecialchars(OURA_REDIRECT_URI) ?></code> (edit this in <code>config/config.php</code> first if your real domain is different, then re-register to match).</li>
-        <li>If asked for a Privacy Policy or Terms of Service URL, use: <code>https://emperorschildren.net/Wardstock/privacy.php</code> and <code>https://emperorschildren.net/Wardstock/terms.php</code>.</li>
+        <li>If asked for a Privacy Policy or Terms of Service URL, use: <code><?= htmlspecialchars(((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'aileeward.com') . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/wardstock')), '/') . '/privacy.php') ?></code> and the matching <code>terms.php</code> on this same host (path is <code>/wardstock/</code> on aileeward.com, not <code>/Wardstock</code>).</li>
         <li>Copy the Client ID and Client Secret it gives you into <code>config/config.php</code> — the <code>OURA_CLIENT_ID</code> and <code>OURA_CLIENT_SECRET</code> constants.</li>
         <li>Re-upload <code>config/config.php</code> and come back to this page.</li>
       </ol>

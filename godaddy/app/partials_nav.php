@@ -1,6 +1,6 @@
 <?php
 // $active should be set by the including page to one of:
-// 'home' | 'incidents' | 'daily' | 'medications' | 'wherewhen'
+// 'home' | 'incidents' | 'daily' | 'medications' | 'ecg' | 'wherewhen'
 // Status/Export/Therapy moved under 'wherewhen' (Fulgrim, PLAN.md §18) —
 // pages that used to set $active to 'status'/'export'/'therapy' now set
 // $active = 'wherewhen' for THIS (top) nav, plus $subActive for
@@ -30,6 +30,7 @@ $attentionNeeded = ($pdo instanceof PDO)
   <a class="<?= nav_class('incidents', $active) ?> icon" href="incidents.php" title="Incidents" aria-label="Incidents">🚨</a>
   <a class="<?= nav_class('daily', $active) ?> icon" href="daily.php" title="Daily Log" aria-label="Daily Log">📋</a>
   <a class="<?= nav_class('medications', $active) ?> icon" href="medications.php" title="Medications" aria-label="Medications">💊</a>
+  <a class="<?= nav_class('ecg', $active) ?> icon" href="ecg.php" title="EKG" aria-label="EKG">🫀</a>
   <a class="<?= nav_class('wherewhen', $active) ?> icon" href="wherewhen.php" title="wherewhen" aria-label="wherewhen"><img src="wherewhen-logo-32.png" width="32" height="32" alt=""></a>
   <a class="nav-link logout" href="logout.php">Log out</a>
 </nav>

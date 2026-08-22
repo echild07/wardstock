@@ -32,8 +32,10 @@ try {
     // AND medication_dosage_history (Fulgrim/wherewhen, PLAN.md §11 #8) —
     // same reasoning as medications itself: export.php's human-facing
     // export never requests these, but HA's disaster-recovery copy needs
-    // them to actually be complete.
-    $types = ['incidents', 'daily_logs', 'therapy_sessions', 'medications', 'medication_dosage_history'];
+    // them to actually be complete. ecg_recordings added Aug 2026 (see
+    // homeassistant/EKG_DESIGN.md) — metadata/summary fields only, never
+    // the PDF blob itself (build_export_records() explains why).
+    $types = ['incidents', 'daily_logs', 'therapy_sessions', 'medications', 'medication_dosage_history', 'ecg_recordings'];
     $data = build_export_records($pdo, $since, $types);
     $data = array_merge(['pulled_at' => date('c'), 'scope' => $scope, 'since' => $since], $data);
 

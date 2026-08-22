@@ -139,13 +139,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
 -- at the bottom of that file — this baseline already includes every
 -- table/seed that file's migrations add cumulatively (medication_dosage_
 -- history, analysis_results, attention_snoozes, proposed_events,
--- blood_pressure_readings, preferred_timezone), so a fresh install and a
--- fully-migrated one should always agree on this number. (Found stale at
--- '3.1' during the preferred_timezone addition, Aug 2026 — this baseline
--- had already gained the 3.1 tables above without the stamp being
--- updated to match; fixed here.)
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.4')
-ON DUPLICATE KEY UPDATE setting_value = '3.4';
+-- blood_pressure_readings, preferred_timezone, ecg_recordings/
+-- ecg_artifacts), so a fresh install and a fully-migrated one should
+-- always agree on this number. (Found stale at '3.1' during the
+-- preferred_timezone addition, Aug 2026 — this baseline had already
+-- gained the 3.1 tables above without the stamp being updated to match;
+-- fixed here.)
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.5')
+ON DUPLICATE KEY UPDATE setting_value = '3.5';
 
 -- Preferred timezone (Ward, Aug 2026) — see settings.php / upgrade_from_3.0.0.sql's
 -- own comment on this same key for why it exists.
@@ -277,4 +278,55 @@ CREATE TABLE IF NOT EXISTS blood_pressure_readings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_reading_at (reading_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- EKG (Kardia) recordings, Aug 2026 — GoDaddy-side slice of
+-- homeassistant/EKG_DESIGN.md (that doc's full target design also covers
+-- an HA-side SQLite store and InfluxDB summary points; this is only the
+-- always-reachable web app's own copy). Manual entry only for now — no
+-- PDF parser exists yet, so Ward reads the Kardia PDF himself and fills
+-- in the fields, same as every other WardStock form; this is the design
+-- doc's "confirmation screen" without the automated extraction step
+-- ahead of it. See sql/upgrade_from_3.0.0.sql for the fuller rationale,
+-- including why the PDF is a BLOB here rather than a filesystem path.
+CREATE TABLE IF NOT EXISTS ecg_recordings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    recorded_at DATETIME NOT NULL,
+    device_product VARCHAR(40) NOT NULL DEFAULT 'KardiaMobile',      -- KardiaMobile / KardiaMobile 6L
+    lead_configuration VARCHAR(20) NOT NULL DEFAULT 'single_lead_i', -- single_lead_i / six_lead_limb / unknown
+    duration_seconds DECIMAL(5,1) NULL,
+    average_heart_rate_bpm SMALLINT UNSIGNED NULL,
+    determination_code VARCHAR(40) NULL,      -- normalized code, see EKG_DESIGN.md "Determination codes"
+    determination_text VARCHAR(120) NULL,     -- exact Kardia wording — kept distinct from the code, never overwritten by it
+    signal_quality VARCHAR(20) NOT NULL DEFAULT 'unknown',   -- acceptable / poor / unreadable / unknown
+    recording_reason VARCHAR(30) NOT NULL DEFAULT 'periodic_baseline',
+    symptoms_present TINYINT(1) NOT NULL DEFAULT 0,
+    symptoms_json TEXT NULL,                  -- [{code, intensity_0_10}, ...]
+    activity_before VARCHAR(60) NULL,
+    rest_minutes_before SMALLINT UNSIGNED NULL,
+    related_incident_id INT NULL,             -- optional link into incidents, same idea as proposed_events.created_incident_id
+    notes TEXT NULL,
+    clinician_reviewed TINYINT(1) NOT NULL DEFAULT 0,
+    clinician_interpretation TEXT NULL,
+    clinician_reviewer_name VARCHAR(100) NULL,
+    clinician_reviewed_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (related_incident_id) REFERENCES incidents(id),
+    INDEX idx_ecg_recorded_at (recorded_at),
+    INDEX idx_ecg_determination (determination_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ecg_artifacts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    recording_id INT NOT NULL,
+    artifact_type VARCHAR(30) NOT NULL DEFAULT 'kardia_pdf_report',
+    original_filename VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    byte_size INT UNSIGNED NOT NULL,
+    sha256 CHAR(64) NOT NULL,                 -- computed before anything else touches the upload
+    file_blob LONGBLOB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recording_id) REFERENCES ecg_recordings(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_ecg_recording_sha (recording_id, sha256)   -- duplicate-upload detection, EKG_DESIGN.md's artifact model
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

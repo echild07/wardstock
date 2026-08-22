@@ -44,6 +44,67 @@ body {
 .logo { display: block; margin: 0 auto 8px; border-radius: 50%; }
 .wrap.narrow form { text-align: left; }
 
+/* ---------- login.php landing layout (Ward, Aug 2026) ----------
+   One template, two arrangements via grid-template-areas rather than
+   two separate pages/device-sniffed markup — same 3 cards (about /
+   login / tracking) just reflow at the breakpoint. Mobile: fast login
+   is the point, so the Login card is a full-width bar up top and the
+   two teasers sit side by side below it, small. Desktop: exploring is
+   the point, so About stacks over Login on the left while Tracking
+   becomes one tall panel on the right (grid-template-rows: auto 1fr
+   plus reusing the "tracking" area name across both rows is what
+   stretches it the full height, no explicit row-span needed). */
+.wrap.landing { max-width: 440px; padding-top: 40px; text-align: center; position: relative; z-index: 1; }
+.landing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "login login"
+    "about tracking";
+  gap: 14px;
+  margin-top: 20px;
+  text-align: left;
+}
+.landing-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.landing-card h2 { font-size: 0.95rem; margin: 0 0 8px; color: var(--text); }
+.landing-card p { color: var(--muted); font-size: 0.85rem; line-height: 1.5; margin: 0 0 10px; }
+.landing-card p:last-child { margin-bottom: 0; }
+.landing-about { grid-area: about; }
+.landing-login { grid-area: login; }
+.landing-login form { margin-bottom: 0; }
+.landing-tracking { grid-area: tracking; }
+.landing-demo-btn { display: none; } /* mobile: the small text hint link below is used instead */
+@media (min-width: 720px) {
+  .wrap.landing { max-width: 900px; padding-top: 60px; }
+  .landing-grid {
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "about tracking"
+      "login tracking";
+    gap: 20px;
+  }
+  .landing-card { padding: 22px 26px; }
+  .landing-demo-btn { display: inline-block; margin-top: 10px; }
+  .landing-demo-hint { display: none; } /* the mobile text-link version */
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+}
+
 h1 { font-size: 1.4rem; margin: 0; }
 .tagline { color: var(--muted); font-size: 0.9rem; margin: 4px 0 20px; }
 
@@ -288,6 +349,7 @@ textarea { resize: vertical; }
 .tag-incident { background: #7a3f4f; }
 .tag-daily { background: #3f6a7a; }
 .tag-therapy { background: #5f4f8a; }
+.tag-ecg { background: #4f7a6a; }
 .tag-cardiac { background: #b03a3a; }
 .tag-medical { background: #3f7a5f; }
 

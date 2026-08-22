@@ -30,6 +30,7 @@ $dbVersion = get_setting($pdo, 'db_version');
       <img src="icon-192.png" alt="" width="36" height="36" class="brand-mark">
       <h1>About WardStock</h1>
     </div>
+    <a class="btn-link" href="../">LeeWard home</a>
     <a class="btn-link" href="<?= $isLoggedIn ? 'index.php' : 'login.php' ?>">← Back to <?= $isLoggedIn ? 'dashboard' : 'login' ?></a>
   </header>
   <?php if ($isLoggedIn): ?>
@@ -39,7 +40,7 @@ $dbVersion = get_setting($pdo, 'db_version');
   <fieldset>
     <legend>What this is</legend>
     <p>WardStock — "taking stock of Ward." A private, single-user health log for anxiety and cardiac incidents, daily health tracking, medications, and therapy — built to be exact when it matters and simple enough to reach for in the moment.</p>
-    <p>Part of the <strong>Lucius</strong> project — this app is the always-reachable piece you actually open. A separate, home-based engine called <strong>wherewhen</strong> (Node-RED + InfluxDB, running on Home Assistant) handles background sync with your Oura Ring, deeper analysis, and disaster-recovery backup, entirely on your own hardware — nothing raw ever leaves your home network. See <code>README.md</code> at the project root if you have the source, or ask whoever maintains this install.</p>
+    <p>Part of <strong>LeeWard</strong>. This app is the always-reachable piece you actually open. A separate, home-based engine (also nicknamed wherewhen) on Home Assistant handles Oura sync, analysis, and backup — nothing raw leaves the home network. LeeWard’s manufacturing product, a different codebase, lives at <a href="../wherewhen/login.php">/wherewhen/</a>.</p>
   </fieldset>
 
   <fieldset>

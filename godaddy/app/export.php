@@ -26,25 +26,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['do_export'])) {
 }
 
 // ---------- Counts for the summary shown on the page ----------
+// Wrapped in try/catch (unlike the rest of this app's count queries) —
+// ecg_recordings is new (Aug 2026) and this page must not 500 on an
+// install where the SQL migration hasn't been run yet.
 function count_rows($pdo, $table, $since) {
-    if ($since) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) c FROM $table WHERE updated_at > ?");
-        $stmt->execute([$since]);
-    } else {
-        $stmt = $pdo->query("SELECT COUNT(*) c FROM $table");
+    try {
+        if ($since) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) c FROM $table WHERE updated_at > ?");
+            $stmt->execute([$since]);
+        } else {
+            $stmt = $pdo->query("SELECT COUNT(*) c FROM $table");
+        }
+        return (int)$stmt->fetch()['c'];
+    } catch (Throwable $e) {
+        return 0;
     }
-    return (int)$stmt->fetch()['c'];
 }
 
 $allCounts = [
     'incidents' => count_rows($pdo, 'incidents', null),
     'daily_logs' => count_rows($pdo, 'daily_logs', null),
     'therapy_sessions' => count_rows($pdo, 'therapy_sessions', null),
+    'ecg_recordings' => count_rows($pdo, 'ecg_recordings', null),
 ];
 $sinceCounts = $lastExport ? [
     'incidents' => count_rows($pdo, 'incidents', $lastExport),
     'daily_logs' => count_rows($pdo, 'daily_logs', $lastExport),
     'therapy_sessions' => count_rows($pdo, 'therapy_sessions', $lastExport),
+    'ecg_recordings' => count_rows($pdo, 'ecg_recordings', $lastExport),
 ] : null;
 
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
@@ -89,13 +98,13 @@ $subActive = 'export';
       <label class="radio-row">
         <input type="radio" name="scope" value="all" checked>
         All records from the start
-        (<?= $allCounts['incidents'] ?> incidents, <?= $allCounts['daily_logs'] ?> daily logs, <?= $allCounts['therapy_sessions'] ?> therapy sessions)
+        (<?= $allCounts['incidents'] ?> incidents, <?= $allCounts['daily_logs'] ?> daily logs, <?= $allCounts['therapy_sessions'] ?> therapy sessions, <?= $allCounts['ecg_recordings'] ?> EKG recordings)
       </label>
       <label class="radio-row">
         <input type="radio" name="scope" value="since_last" <?= $lastExport ? '' : 'disabled' ?>>
         Only since last export
         <?php if ($lastExport): ?>
-          (<?= $sinceCounts['incidents'] ?> incidents, <?= $sinceCounts['daily_logs'] ?> daily logs, <?= $sinceCounts['therapy_sessions'] ?> therapy sessions)
+          (<?= $sinceCounts['incidents'] ?> incidents, <?= $sinceCounts['daily_logs'] ?> daily logs, <?= $sinceCounts['therapy_sessions'] ?> therapy sessions, <?= $sinceCounts['ecg_recordings'] ?> EKG recordings)
         <?php else: ?>
           (no prior export yet)
         <?php endif; ?>
@@ -107,6 +116,7 @@ $subActive = 'export';
       <label class="checkbox-row"><input type="checkbox" name="types[]" value="incidents" checked> Incidents</label>
       <label class="checkbox-row"><input type="checkbox" name="types[]" value="daily_logs" checked> Daily Log</label>
       <label class="checkbox-row"><input type="checkbox" name="types[]" value="therapy_sessions" checked> Therapy</label>
+      <label class="checkbox-row"><input type="checkbox" name="types[]" value="ecg_recordings" checked> EKG (recording summaries only — PDFs are never included)</label>
     </fieldset>
 
     <div class="form-actions">

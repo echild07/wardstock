@@ -30,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'therapy_session' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
                 'medication' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
                 'medication_dosage_history' => ['inserted' => 0, 'skipped' => 0],
+                'ecg_recording' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
             ];
             $unmatchedMeds = [];
 
@@ -216,6 +217,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt = $pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
                         $stmt->execute([$medId, $rec['old_dosage'] ?? null, $rec['new_dosage'] ?? '', $rec['changed_at'], $rec['notes'] ?? null]);
                         $counts['medication_dosage_history']['inserted']++;
+
+                    } elseif ($type === 'ecg_recording') {
+                        // Aug 2026 (EKG_DESIGN.md) — matched by (recorded_at,
+                        // device_product), the same reasonable-natural-key
+                        // idea as therapy_session's (session_date,
+                        // session_type). related_incident_id is deliberately
+                        // NOT imported — an incident id isn't portable across
+                        // databases (same reason incidents' own
+                        // related_medication_id is excluded from ITS import
+                        // above), and there's no source-side natural key to
+                        // re-resolve it through. The PDF artifact itself
+                        // never travels through this path either — exports
+                        // only ever carry the recording summary, per
+                        // build_export_records()'s own comment.
+                        if (empty($rec['recorded_at'])) { $counts['ecg_recording']['skipped']++; continue; }
+                        $cols = ['device_product', 'lead_configuration', 'duration_seconds', 'average_heart_rate_bpm',
+                                 'determination_code', 'determination_text', 'signal_quality', 'recording_reason',
+                                 'symptoms_present', 'symptoms_json', 'activity_before', 'rest_minutes_before',
+                                 'notes', 'clinician_reviewed', 'clinician_interpretation', 'clinician_reviewer_name',
+                                 'clinician_reviewed_at'];
+
+                        $existing = $pdo->prepare('SELECT * FROM ecg_recordings WHERE recorded_at = ? AND device_product = ?');
+                        $existing->execute([$rec['recorded_at'], $rec['device_product'] ?? 'KardiaMobile']);
+                        $existingRow = $existing->fetch();
+
+                        $fields = ['recorded_at' => $rec['recorded_at'], 'device_product' => $rec['device_product'] ?? 'KardiaMobile'];
+                        foreach ($cols as $c) {
+                            if ($c === 'device_product') continue; // already set above
+                            if (array_key_exists($c, $rec) && $rec[$c] !== null) {
+                                $fields[$c] = $rec[$c];
+                            } elseif ($existingRow) {
+                                $fields[$c] = $existingRow[$c];
+                            } else {
+                                $fields[$c] = ($c === 'lead_configuration') ? 'single_lead_i'
+                                    : ($c === 'signal_quality' ? 'unknown'
+                                    : ($c === 'recording_reason' ? 'periodic_baseline'
+                                    : ($c === 'symptoms_present' || $c === 'clinician_reviewed' ? 0 : null)));
+                            }
+                        }
+
+                        if ($existingRow) {
+                            $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
+                            $stmt = $pdo->prepare("UPDATE ecg_recordings SET $set WHERE id = :id");
+                            $fields['id'] = $existingRow['id'];
+                            $stmt->execute($fields);
+                            $counts['ecg_recording']['updated']++;
+                        } else {
+                            $colList = implode(', ', array_keys($fields));
+                            $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                            $stmt = $pdo->prepare("INSERT INTO ecg_recordings ($colList) VALUES ($placeholders)");
+                            $stmt->execute($fields);
+                            $counts['ecg_recording']['inserted']++;
+                        }
                     }
                 }
 
@@ -256,7 +310,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     by date (and type, for therapy) — if a matching entry already exists it's updated in place, so re-importing
     the same file twice is safe for those. <strong>Incidents have no reliable matching key and are always inserted
     as new records</strong> — importing the same file twice will create duplicate incidents, so only do this once
-    per export, or manually delete the duplicates afterward.
+    per export, or manually delete the duplicates afterward. <strong>EKG recordings</strong> are matched by
+    recording time + device, same idea as therapy sessions; the original PDF is never part of export/import,
+    only the recording summary.
   </p>
 
   <?php foreach ($errors as $e): ?><p class="error"><?= htmlspecialchars($e) ?></p><?php endforeach; ?>
@@ -270,6 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <li>Therapy sessions: <?= $summary['counts']['therapy_session']['inserted'] ?> added, <?= $summary['counts']['therapy_session']['updated'] ?> updated<?= $summary['counts']['therapy_session']['skipped'] ? ', ' . $summary['counts']['therapy_session']['skipped'] . ' skipped (missing date)' : '' ?></li>
         <li>Medications: <?= $summary['counts']['medication']['inserted'] ?> added, <?= $summary['counts']['medication']['updated'] ?> updated<?= $summary['counts']['medication']['skipped'] ? ', ' . $summary['counts']['medication']['skipped'] . ' skipped (missing name/start date)' : '' ?></li>
         <li>Dosage history: <?= $summary['counts']['medication_dosage_history']['inserted'] ?> added<?= $summary['counts']['medication_dosage_history']['skipped'] ? ', ' . $summary['counts']['medication_dosage_history']['skipped'] . ' skipped (already present, or no matching medication)' : '' ?></li>
+        <li>EKG recordings: <?= $summary['counts']['ecg_recording']['inserted'] ?> added, <?= $summary['counts']['ecg_recording']['updated'] ?> updated<?= $summary['counts']['ecg_recording']['skipped'] ? ', ' . $summary['counts']['ecg_recording']['skipped'] . ' skipped (missing recorded-at time)' : '' ?> — PDFs are never included in export/import, only the recording summary</li>
       </ul>
       <?php if ($summary['unmatchedMeds']): ?>
         <p class="error">These medication names from the file don't match anything in your current Medications list, so they were skipped when rebuilding the "taken" checklist for affected days: <?= htmlspecialchars(implode(', ', $summary['unmatchedMeds'])) ?>. If they've just been renamed, add them again under Medications and re-import.</p>

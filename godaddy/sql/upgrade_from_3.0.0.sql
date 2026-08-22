@@ -232,9 +232,62 @@ PREPARE lucius_stmt FROM @lucius_ddl;
 EXECUTE lucius_stmt;
 DEALLOCATE PREPARE lucius_stmt;
 
+-- 3.5: EKG (Kardia) recordings — the GoDaddy-side slice of homeassistant/EKG_DESIGN.md.
+-- Manual entry only for now: no PDF parser exists yet, so Ward reads the
+-- Kardia PDF himself and fills in the fields, same as every other
+-- WardStock form — this is the design doc's "confirmation screen"
+-- without the automated extraction step ahead of it. The original PDF
+-- is preserved as a BLOB in ecg_artifacts rather than the design doc's
+-- filesystem storage_path — GoDaddy shared hosting has no established
+-- non-webroot storage location in this project, and a DB-stored blob is
+-- never directly URL-reachable by construction, which satisfies "no
+-- direct unauthenticated file access" for free. Revisit if file size or
+-- DB storage quota ever becomes a real constraint.
+CREATE TABLE IF NOT EXISTS ecg_recordings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    recorded_at DATETIME NOT NULL,
+    device_product VARCHAR(40) NOT NULL DEFAULT 'KardiaMobile',      -- KardiaMobile / KardiaMobile 6L
+    lead_configuration VARCHAR(20) NOT NULL DEFAULT 'single_lead_i', -- single_lead_i / six_lead_limb / unknown
+    duration_seconds DECIMAL(5,1) NULL,
+    average_heart_rate_bpm SMALLINT UNSIGNED NULL,
+    determination_code VARCHAR(40) NULL,      -- normalized code, see EKG_DESIGN.md "Determination codes"
+    determination_text VARCHAR(120) NULL,     -- exact Kardia wording — kept distinct from the code, never overwritten by it
+    signal_quality VARCHAR(20) NOT NULL DEFAULT 'unknown',   -- acceptable / poor / unreadable / unknown
+    recording_reason VARCHAR(30) NOT NULL DEFAULT 'periodic_baseline',
+    symptoms_present TINYINT(1) NOT NULL DEFAULT 0,
+    symptoms_json TEXT NULL,                  -- [{code, intensity_0_10}, ...]
+    activity_before VARCHAR(60) NULL,
+    rest_minutes_before SMALLINT UNSIGNED NULL,
+    related_incident_id INT NULL,             -- optional link into incidents, same idea as proposed_events.created_incident_id
+    notes TEXT NULL,
+    clinician_reviewed TINYINT(1) NOT NULL DEFAULT 0,
+    clinician_interpretation TEXT NULL,
+    clinician_reviewer_name VARCHAR(100) NULL,
+    clinician_reviewed_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (related_incident_id) REFERENCES incidents(id),
+    INDEX idx_ecg_recorded_at (recorded_at),
+    INDEX idx_ecg_determination (determination_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ecg_artifacts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    recording_id INT NOT NULL,
+    artifact_type VARCHAR(30) NOT NULL DEFAULT 'kardia_pdf_report',
+    original_filename VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    byte_size INT UNSIGNED NOT NULL,
+    sha256 CHAR(64) NOT NULL,                 -- computed before anything else touches the upload
+    file_blob LONGBLOB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recording_id) REFERENCES ecg_recordings(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_ecg_recording_sha (recording_id, sha256)   -- duplicate-upload detection, EKG_DESIGN.md's artifact model
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 DROP PROCEDURE lucius_add_column_if_missing;
 
 -- Version tracking (always safe to (re-)stamp — this is the current
--- state of the 3.x line as of this file's last update, Major.SQL = "3.4").
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.4')
-ON DUPLICATE KEY UPDATE setting_value = '3.4';
+-- state of the 3.x line as of this file's last update, Major.SQL = "3.5").
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.5')
+ON DUPLICATE KEY UPDATE setting_value = '3.5';
