@@ -3,16 +3,18 @@
 -- Run this ONCE in phpMyAdmin's SQL tab for any 4.x install. Safe to run
 -- from any point in the 4.x line, same convention as upgrade_from_3.0.0.sql.
 --
--- 4.0 -> 4.1: table prefix convention (Ward, Aug 2026) — every LeeWard
--- product's tables get renamed `{product}_{tablename}`, so multiple
--- products can eventually share one MySQL database without name
--- collisions. See leeward/STANDARDS.md §5 for the company-wide rule.
--- WardStock's own column/relationship structure is UNCHANGED — this is a
--- rename-only migration, every RENAME TABLE below is idempotent (checked
--- against information_schema first, so re-running this file after it's
--- already applied is a safe no-op), and it stamps db_version to "4.1"
--- since renaming tables IS a storage-format ("Data") change, even though
--- nothing about the columns themselves moved.
+-- Prepares a database FOR 4.0.0 — table-prefix convention (Ward, Aug
+-- 2026): every LeeWard product's tables get renamed `{product}_{tablename}`,
+-- so multiple products can eventually share one MySQL database without
+-- name collisions. See leeward/STANDARDS.md §5 for the company-wide
+-- rule. WardStock's own column/relationship structure is UNCHANGED —
+-- this is a rename-only migration, every RENAME TABLE below is
+-- idempotent (checked against information_schema first, so re-running
+-- this file after it's already applied is a safe no-op). Still stamps
+-- db_version "4.0", not "4.1" — this repo hasn't deployed 4.0.0 live yet,
+-- so this work is folded into that same not-yet-shipped version rather
+-- than advancing past it. The version number only moves at actual
+-- deploy time (leeward/STANDARDS.md §3), not at every local change.
 --
 -- Coming from the 3.x line? Run upgrade_from_3.0.0.sql first if you haven't
 -- already (any 3.x-line schema change lives there, not here) — this file
@@ -254,5 +256,5 @@ DEALLOCATE PREPARE lucius_stmt;
 -- Table renamed to wardstock_app_settings above — this INSERT already
 -- targets the new name, so it's correct whether this run just did the
 -- renames or they'd already happened on a previous run of this file.
-INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES ('db_version', '4.1')
-ON DUPLICATE KEY UPDATE setting_value = '4.1';
+INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES ('db_version', '4.0')
+ON DUPLICATE KEY UPDATE setting_value = '4.0';

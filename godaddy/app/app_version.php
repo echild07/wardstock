@@ -27,12 +27,16 @@
 //   bumps, for every product at once — don't invent a new one, and don't
 //   bump this product's major number alone without also updating
 //   leeward/VERSIONS.md and the other products.
-//   Bumped Data to 1 (4.0 -> 4.1) for the table-prefix convention (Ward,
-//   Aug 2026, leeward/STANDARDS.md §5): every table renamed
-//   `wardstock_{tablename}` so multiple LeeWard products can eventually
-//   share one MySQL database without name collisions. Rename-only —
-//   columns/relationships unchanged — see sql/upgrade_from_4.0.0.sql for
-//   the idempotent RENAME TABLE migration.
+//   Still 4.0.0 (Ward, Aug 2026): the table-prefix convention
+//   (leeward/STANDARDS.md §5 — every table renamed `wardstock_{tablename}`,
+//   so multiple LeeWard products can eventually share one MySQL database
+//   without name collisions) is folded INTO the 4.0.0 upgrade path rather
+//   than bumping Data to 1 — sql/upgrade_from_4.0.0.sql's job is to
+//   prepare a database FOR 4.0.0, renames included. The version number
+//   (and its git tag) only advances at actual deploy time, not at every
+//   git push — several rounds of local work can accumulate under one
+//   not-yet-deployed number. Once 4.0.0 actually ships live, it's final;
+//   the next round of work bumps from there.
 // - APP_VERSION_DATA (also APP_VERSION_SQL): bump ONLY when persisted
 //   storage format changes — sql/, SQLite, Influx measurement/tag/field
 //   layout, or another restore contract. Resets CODE to 0. The database
@@ -50,7 +54,7 @@
 
 define('APP_VERSION_NAME', 'Drew');
 define('APP_VERSION_MAJOR', 4);
-define('APP_VERSION_DATA', 1);
+define('APP_VERSION_DATA', 0);
 define('APP_VERSION_SQL', APP_VERSION_DATA);
 define('APP_VERSION_CODE', 0);
 define('APP_VERSION_SCHEMA', sprintf('%d.%d', APP_VERSION_MAJOR, APP_VERSION_DATA));
