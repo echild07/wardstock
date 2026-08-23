@@ -7,7 +7,7 @@ $pdo = get_db();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $med = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT * FROM medications WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_medications WHERE id = ?');
     $stmt->execute([$id]);
     $med = $stmt->fetch();
     if (!$med) { header('Location: medications.php'); exit; }
@@ -18,7 +18,7 @@ if ($id) {
 $copyFromId = isset($_GET['copy_from']) ? (int)$_GET['copy_from'] : null;
 $copyFrom = null;
 if ($copyFromId && !$id) {
-    $stmt = $pdo->prepare('SELECT * FROM medications WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_medications WHERE id = ?');
     $stmt->execute([$copyFromId]);
     $copyFrom = $stmt->fetch();
 }
@@ -26,7 +26,7 @@ if ($copyFromId && !$id) {
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
-        $stmt = $pdo->prepare('DELETE FROM medications WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_medications WHERE id = ?');
         $stmt->execute([$id]);
         header('Location: medications.php');
         exit;
@@ -47,31 +47,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         if ($id) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-            $stmt = $pdo->prepare("UPDATE medications SET $set WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE wardstock_medications SET $set WHERE id = :id");
             $fields['id'] = $id;
             $stmt->execute($fields);
         } else {
             $fields['sort_order'] = 0;
             $cols = implode(', ', array_keys($fields));
             $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-            $stmt = $pdo->prepare("INSERT INTO medications ($cols) VALUES ($placeholders)");
+            $stmt = $pdo->prepare("INSERT INTO wardstock_medications ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
 
             // If this was a dosage-change flow, close out the prior row the day before this one starts,
-            // and log the change itself into medication_dosage_history (PLAN.md §11 #8) — needed to
+            // and log the change itself into wardstock_medication_dosage_history (PLAN.md §11 #8) — needed to
             // correlate dosage changes against weight/HRV/sleep/mood/incidents later.
             $closeId = (int)($_POST['close_previous_id'] ?? 0);
             if ($closeId) {
                 $newStart = new DateTime($fields['start_date']);
                 $newStart->modify('-1 day');
-                $stmt2 = $pdo->prepare('UPDATE medications SET end_date = ? WHERE id = ? AND end_date IS NULL');
+                $stmt2 = $pdo->prepare('UPDATE wardstock_medications SET end_date = ? WHERE id = ? AND end_date IS NULL');
                 $stmt2->execute([$newStart->format('Y-m-d'), $closeId]);
 
-                $stmt3 = $pdo->prepare('SELECT dosage FROM medications WHERE id = ?');
+                $stmt3 = $pdo->prepare('SELECT dosage FROM wardstock_medications WHERE id = ?');
                 $stmt3->execute([$closeId]);
                 $prevDosage = $stmt3->fetchColumn();
 
-                $stmt4 = $pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
+                $stmt4 = $pdo->prepare('INSERT INTO wardstock_medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
                 $stmt4->execute([$pdo->lastInsertId(), $prevDosage ?: null, $fields['dosage'], $fields['start_date'], trim($_POST['dosage_change_reason'] ?? '') ?: null]);
             }
         }
@@ -97,7 +97,7 @@ $endVal = $med && $med['end_date'] ? date('Y-m-d', strtotime($med['end_date'])) 
 $priorDosages = [];
 if ($nameVal !== '') {
     $excludeId = $med ? (int)$med['id'] : ($copyFrom ? (int)$copyFrom['id'] : 0);
-    $stmt = $pdo->prepare('SELECT dosage, start_date, end_date FROM medications WHERE name = ? AND end_date IS NOT NULL AND id != ? ORDER BY start_date DESC');
+    $stmt = $pdo->prepare('SELECT dosage, start_date, end_date FROM wardstock_medications WHERE name = ? AND end_date IS NOT NULL AND id != ? ORDER BY start_date DESC');
     $stmt->execute([$nameVal, $excludeId]);
     $priorDosages = $stmt->fetchAll();
 }

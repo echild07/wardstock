@@ -46,7 +46,7 @@ if (!$category) {
 // medication names may predate what's in the Medications list today.
 $relatedMedId = null;
 if (!empty($body['related_medication_name'])) {
-    $stmt = $pdo->prepare('SELECT id FROM medications WHERE name = ? ORDER BY start_date DESC LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id FROM wardstock_medications WHERE name = ? ORDER BY start_date DESC LIMIT 1');
     $stmt->execute([$body['related_medication_name']]);
     $relatedMedId = $stmt->fetchColumn() ?: null;
 }
@@ -66,13 +66,13 @@ $fields = [
 ];
 
 try {
-    $existing = $pdo->prepare('SELECT id FROM incidents WHERE external_ref = ?');
+    $existing = $pdo->prepare('SELECT id FROM wardstock_incidents WHERE external_ref = ?');
     $existing->execute([$fields['external_ref']]);
     $existingId = $existing->fetchColumn();
 
     if ($existingId) {
         $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-        $stmt = $pdo->prepare("UPDATE incidents SET $set WHERE id = :id");
+        $stmt = $pdo->prepare("UPDATE wardstock_incidents SET $set WHERE id = :id");
         $fields['id'] = $existingId;
         $stmt->execute($fields);
         $action = 'updated';
@@ -80,7 +80,7 @@ try {
     } else {
         $cols = implode(', ', array_keys($fields));
         $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-        $stmt = $pdo->prepare("INSERT INTO incidents ($cols) VALUES ($placeholders)");
+        $stmt = $pdo->prepare("INSERT INTO wardstock_incidents ($cols) VALUES ($placeholders)");
         $stmt->execute($fields);
         $action = 'inserted';
         $id = $pdo->lastInsertId();

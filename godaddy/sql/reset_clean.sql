@@ -17,25 +17,25 @@
 -- two copies of the same table list are maintained by hand.)
 
 -- Children before parents, so the drops themselves never fail on a live FK.
-DROP TABLE IF EXISTS ecg_artifacts;
-DROP TABLE IF EXISTS ecg_recordings;
-DROP TABLE IF EXISTS proposed_events;
-DROP TABLE IF EXISTS medication_dosage_history;
-DROP TABLE IF EXISTS blood_pressure_readings;
-DROP TABLE IF EXISTS attention_snoozes;
-DROP TABLE IF EXISTS analysis_results;
-DROP TABLE IF EXISTS incidents;
-DROP TABLE IF EXISTS daily_logs;
-DROP TABLE IF EXISTS medications;
-DROP TABLE IF EXISTS therapy_sessions;
-DROP TABLE IF EXISTS therapy_schedules;
-DROP TABLE IF EXISTS oura_tokens;
-DROP TABLE IF EXISTS app_settings;
-DROP TABLE IF EXISTS app_user;
-DROP TABLE IF EXISTS ha_sync_log;
-DROP TABLE IF EXISTS system_status_reports;
+DROP TABLE IF EXISTS wardstock_ecg_artifacts;
+DROP TABLE IF EXISTS wardstock_ecg_recordings;
+DROP TABLE IF EXISTS wardstock_proposed_events;
+DROP TABLE IF EXISTS wardstock_medication_dosage_history;
+DROP TABLE IF EXISTS wardstock_blood_pressure_readings;
+DROP TABLE IF EXISTS wardstock_attention_snoozes;
+DROP TABLE IF EXISTS wardstock_analysis_results;
+DROP TABLE IF EXISTS wardstock_incidents;
+DROP TABLE IF EXISTS wardstock_daily_logs;
+DROP TABLE IF EXISTS wardstock_medications;
+DROP TABLE IF EXISTS wardstock_therapy_sessions;
+DROP TABLE IF EXISTS wardstock_therapy_schedules;
+DROP TABLE IF EXISTS wardstock_oura_tokens;
+DROP TABLE IF EXISTS wardstock_app_settings;
+DROP TABLE IF EXISTS wardstock_app_user;
+DROP TABLE IF EXISTS wardstock_ha_sync_log;
+DROP TABLE IF EXISTS wardstock_system_status_reports;
 
-CREATE TABLE IF NOT EXISTS incidents (
+CREATE TABLE IF NOT EXISTS wardstock_incidents (
     id INT AUTO_INCREMENT PRIMARY KEY,
     category VARCHAR(20) NOT NULL DEFAULT 'anxiety',   -- anxiety / cardiac / medical
     occurred_at DATETIME NOT NULL,                     -- start time
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS daily_logs (
+CREATE TABLE IF NOT EXISTS wardstock_daily_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     log_date DATE NOT NULL,
     sleep_duration_hrs DECIMAL(4,2),
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS daily_logs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS medications (
+CREATE TABLE IF NOT EXISTS wardstock_medications (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     dosage VARCHAR(50),
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS medications (
 -- Medication dosage-change history (Fulgrim/wherewhen, PLAN.md §11 #8) —
 -- same medicine, different dosage, tracked over time so dosage changes
 -- can be correlated against weight/HRV/sleep/mood/incidents.
-CREATE TABLE IF NOT EXISTS medication_dosage_history (
+CREATE TABLE IF NOT EXISTS wardstock_medication_dosage_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
     medication_id INT NOT NULL,
     old_dosage VARCHAR(50) NULL,
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS medication_dosage_history (
     changed_at DATE NOT NULL,
     notes TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (medication_id) REFERENCES medications(id)
+    FOREIGN KEY (medication_id) REFERENCES wardstock_medications(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Medications are NOT seeded here (Aug 2026 — removed a hardcoded personal
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS medication_dosage_history (
 -- Import (import.php) or the godaddy_restore_from_file_flow.json Node-RED
 -- flow — see godaddy/README.md's setup steps.
 
-CREATE TABLE IF NOT EXISTS therapy_sessions (
+CREATE TABLE IF NOT EXISTS wardstock_therapy_sessions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     session_date DATETIME NOT NULL,
     session_type VARCHAR(20) DEFAULT 'individual',   -- individual / couples / other
@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS therapy_sessions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS therapy_schedules (
+CREATE TABLE IF NOT EXISTS wardstock_therapy_schedules (
     id INT AUTO_INCREMENT PRIMARY KEY,
     session_type VARCHAR(20) NOT NULL DEFAULT 'individual',
     start_date DATE NOT NULL,
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS therapy_schedules (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS oura_tokens (
+CREATE TABLE IF NOT EXISTS wardstock_oura_tokens (
     id INT PRIMARY KEY DEFAULT 1,
     access_token TEXT,
     refresh_token TEXT,
@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS oura_tokens (
     connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS app_settings (
+CREATE TABLE IF NOT EXISTS wardstock_app_settings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     setting_key VARCHAR(50) NOT NULL UNIQUE,
     setting_value VARCHAR(255)
@@ -176,14 +176,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 -- Kept in sync with schema.sql's own db_version stamp — a fresh install
 -- through either file should always agree on this number.
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '4.0')
-ON DUPLICATE KEY UPDATE setting_value = '4.0';
+INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES ('db_version', '4.1')
+ON DUPLICATE KEY UPDATE setting_value = '4.1';
 
 -- Preferred timezone (Ward, Aug 2026) — see settings.php / upgrade_from_3.0.0.sql's
 -- own comment on this same key for why it exists.
-INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('preferred_timezone', 'America/New_York');
+INSERT IGNORE INTO wardstock_app_settings (setting_key, setting_value) VALUES ('preferred_timezone', 'America/New_York');
 
-CREATE TABLE IF NOT EXISTS app_user (
+CREATE TABLE IF NOT EXISTS wardstock_app_user (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL
@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS app_user (
 
 -- Logs every incoming call from the Home Assistant piece (Lucius project) —
 -- one row per call, success or failure, to any of the api/*.php endpoints.
-CREATE TABLE IF NOT EXISTS ha_sync_log (
+CREATE TABLE IF NOT EXISTS wardstock_ha_sync_log (
     id INT AUTO_INCREMENT PRIMARY KEY,
     endpoint VARCHAR(30) NOT NULL,       -- oura_push / pull_manual_data / status
     called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS ha_sync_log (
 -- GoDaddy status page (Lucius project, PLAN.md §15) — one row per
 -- (category, component), upserted every time the HA-side "Status
 -- Heartbeat" flow reports in.
-CREATE TABLE IF NOT EXISTS system_status_reports (
+CREATE TABLE IF NOT EXISTS wardstock_system_status_reports (
     id INT AUTO_INCREMENT PRIMARY KEY,
     category VARCHAR(20) NOT NULL,               -- ha / nodered / analytics
     component VARCHAR(50) NOT NULL,              -- ha_core / oura_sync / godaddy_pull / bodycomp_import / ...
@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS system_status_reports (
 -- per analysis — result_json holds whatever that analysis's chart page
 -- needs. One row per (analysis_key, period_type) — analysis.php picks by
 -- window-breadth preference (all > monthly > weekly > daily), not recency.
-CREATE TABLE IF NOT EXISTS analysis_results (
+CREATE TABLE IF NOT EXISTS wardstock_analysis_results (
     id INT AUTO_INCREMENT PRIMARY KEY,
     analysis_key VARCHAR(50) NOT NULL,
     period_type VARCHAR(10) NOT NULL,             -- daily / weekly / monthly / all
@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS analysis_results (
 -- was DUE (e.g. "med_2026-08-21"), not the day it was snoozed, so the
 -- snooze naturally expires the next calendar day without any cleanup job.
 -- See app/attention.php.
-CREATE TABLE IF NOT EXISTS attention_snoozes (
+CREATE TABLE IF NOT EXISTS wardstock_attention_snoozes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     reminder_key VARCHAR(80) NOT NULL,
     snoozed_on DATE NOT NULL,
@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS attention_snoozes (
 -- not-yet-built Flux analysis engine will eventually write proposed
 -- events here for Ward to confirm (becomes a real incident) or deny
 -- (stays here as status='denied'). See app/analysis.php.
-CREATE TABLE IF NOT EXISTS proposed_events (
+CREATE TABLE IF NOT EXISTS wardstock_proposed_events (
     id INT AUTO_INCREMENT PRIMARY KEY,
     analysis_key VARCHAR(50) NOT NULL,
     proposed_at DATETIME NOT NULL,
@@ -265,14 +265,14 @@ CREATE TABLE IF NOT EXISTS proposed_events (
     review_notes TEXT NULL,
     created_incident_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_incident_id) REFERENCES incidents(id)
+    FOREIGN KEY (created_incident_id) REFERENCES wardstock_incidents(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Blood pressure readings (Fulgrim, feature list §1.2). A dedicated table
 -- rather than columns on daily_logs — a real BP routine is typically 1-2+
 -- timestamped readings/day, not a collapsed daily value. Entry happens
 -- inline from the Daily Log page (app/daily_form.php).
-CREATE TABLE IF NOT EXISTS blood_pressure_readings (
+CREATE TABLE IF NOT EXISTS wardstock_blood_pressure_readings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     reading_at DATETIME NOT NULL,
     systolic SMALLINT UNSIGNED NOT NULL,
@@ -290,7 +290,7 @@ CREATE TABLE IF NOT EXISTS blood_pressure_readings (
 -- homeassistant/EKG_DESIGN.md. Manual entry only for now — no PDF parser
 -- exists yet, so Ward reads the Kardia PDF himself and fills in the
 -- fields, same as every other WardStock form.
-CREATE TABLE IF NOT EXISTS ecg_recordings (
+CREATE TABLE IF NOT EXISTS wardstock_ecg_recordings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     recorded_at DATETIME NOT NULL,
     device_product VARCHAR(40) NOT NULL DEFAULT 'KardiaMobile',      -- KardiaMobile / KardiaMobile 6L
@@ -305,7 +305,7 @@ CREATE TABLE IF NOT EXISTS ecg_recordings (
     symptoms_json TEXT NULL,                  -- [{code, intensity_0_10}, ...]
     activity_before VARCHAR(60) NULL,
     rest_minutes_before SMALLINT UNSIGNED NULL,
-    related_incident_id INT NULL,             -- optional link into incidents, same idea as proposed_events.created_incident_id
+    related_incident_id INT NULL,             -- optional link into wardstock_incidents, same idea as proposed_events.created_incident_id
     notes TEXT NULL,
     clinician_reviewed TINYINT(1) NOT NULL DEFAULT 0,
     clinician_interpretation TEXT NULL,
@@ -313,12 +313,12 @@ CREATE TABLE IF NOT EXISTS ecg_recordings (
     clinician_reviewed_at DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (related_incident_id) REFERENCES incidents(id),
+    FOREIGN KEY (related_incident_id) REFERENCES wardstock_incidents(id),
     INDEX idx_ecg_recorded_at (recorded_at),
     INDEX idx_ecg_determination (determination_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS ecg_artifacts (
+CREATE TABLE IF NOT EXISTS wardstock_ecg_artifacts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     recording_id INT NOT NULL,
     artifact_type VARCHAR(30) NOT NULL DEFAULT 'kardia_pdf_report',
@@ -328,6 +328,6 @@ CREATE TABLE IF NOT EXISTS ecg_artifacts (
     sha256 CHAR(64) NOT NULL,                 -- computed before anything else touches the upload
     file_blob LONGBLOB NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (recording_id) REFERENCES ecg_recordings(id) ON DELETE CASCADE,
+    FOREIGN KEY (recording_id) REFERENCES wardstock_ecg_recordings(id) ON DELETE CASCADE,
     UNIQUE KEY uniq_ecg_recording_sha (recording_id, sha256)   -- duplicate-upload detection, EKG_DESIGN.md's artifact model
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

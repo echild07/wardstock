@@ -17,15 +17,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['snooze_key'])) {
 $attentionItems = get_attention_items($pdo);
 $pendingEventCount = get_pending_event_count($pdo);
 
-$incCount = (int)$pdo->query('SELECT COUNT(*) c FROM incidents')->fetch()['c'];
-$dailyCount = (int)$pdo->query('SELECT COUNT(*) c FROM daily_logs')->fetch()['c'];
-$therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fetch()['c'];
+$incCount = (int)$pdo->query('SELECT COUNT(*) c FROM wardstock_incidents')->fetch()['c'];
+$dailyCount = (int)$pdo->query('SELECT COUNT(*) c FROM wardstock_daily_logs')->fetch()['c'];
+$therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM wardstock_therapy_sessions')->fetch()['c'];
 // Guarded, unlike the counts above: ecg_recordings is new (Aug 2026) and
 // this dashboard must keep working on any install where the SQL
 // migration hasn't been run yet — not a real 500-on-clean-deploy risk we
 // need twice in one project (see login.php's own health check).
 try {
-    $ecgCount = (int)$pdo->query('SELECT COUNT(*) c FROM ecg_recordings')->fetch()['c'];
+    $ecgCount = (int)$pdo->query('SELECT COUNT(*) c FROM wardstock_ecg_recordings')->fetch()['c'];
 } catch (Throwable $e) {
     $ecgCount = 0;
 }
@@ -38,17 +38,17 @@ $recent = $pdo->query("
                 ELSE CONCAT('Intensity ', COALESCE(anxiety_intensity, '?'), '/10')
             END AS headline,
             NULL AS raw_sleep_hrs
-     FROM incidents)
+     FROM wardstock_incidents)
     UNION ALL
     (SELECT 'daily' AS type, id, log_date AS event_time,
             CONCAT('Sleep ', COALESCE(sleep_duration_hrs, '?'), 'h') AS headline,
             sleep_duration_hrs AS raw_sleep_hrs
-     FROM daily_logs)
+     FROM wardstock_daily_logs)
     UNION ALL
     (SELECT 'therapy' AS type, id, session_date AS event_time,
             CONCAT(UPPER(LEFT(session_type,1)), SUBSTRING(session_type,2), ' session') AS headline,
             NULL AS raw_sleep_hrs
-     FROM therapy_sessions)
+     FROM wardstock_therapy_sessions)
     ORDER BY event_time DESC
     LIMIT 10
 ")->fetchAll();
@@ -79,28 +79,28 @@ for ($i = 0; $i <= 6; $i++) {
 $oldestDay = min($days);
 
 $incByDay = [];
-$stmt = $pdo->prepare("SELECT DATE(occurred_at) d, COUNT(*) c FROM incidents WHERE occurred_at >= ? GROUP BY DATE(occurred_at)");
+$stmt = $pdo->prepare("SELECT DATE(occurred_at) d, COUNT(*) c FROM wardstock_incidents WHERE occurred_at >= ? GROUP BY DATE(occurred_at)");
 $stmt->execute([$oldestDay . ' 00:00:00']);
 foreach ($stmt->fetchAll() as $row) { $incByDay[$row['d']] = (int)$row['c']; }
 
 $dailyByDay = [];
-$stmt = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date >= ?');
+$stmt = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date >= ?');
 $stmt->execute([$oldestDay]);
 foreach ($stmt->fetchAll() as $row) { $dailyByDay[$row['log_date']] = $row; }
 
 // Blood pressure readings by day (Fulgrim, feature list §1.2) — a day can
 // have more than one, grouped here for the dashboard pill (see bp_pill()).
 $bpByDay = [];
-$stmt = $pdo->prepare('SELECT * FROM blood_pressure_readings WHERE reading_at >= ? ORDER BY reading_at');
+$stmt = $pdo->prepare('SELECT * FROM wardstock_blood_pressure_readings WHERE reading_at >= ? ORDER BY reading_at');
 $stmt->execute([$oldestDay . ' 00:00:00']);
 foreach ($stmt->fetchAll() as $row) { $bpByDay[date('Y-m-d', strtotime($row['reading_at']))][] = $row; }
 
-$allMeds = $pdo->query("SELECT * FROM medications WHERE med_type = 'scheduled' ORDER BY sort_order")->fetchAll();
+$allMeds = $pdo->query("SELECT * FROM wardstock_medications WHERE med_type = 'scheduled' ORDER BY sort_order")->fetchAll();
 // meds_valid_on() now lives in attention.php (shared with the attention banner).
 
-$schedules = $pdo->query('SELECT * FROM therapy_schedules WHERE active = 1')->fetchAll();
+$schedules = $pdo->query('SELECT * FROM wardstock_therapy_schedules WHERE active = 1')->fetchAll();
 $therapyByDay = [];
-$stmt = $pdo->prepare('SELECT * FROM therapy_sessions WHERE session_date >= ?');
+$stmt = $pdo->prepare('SELECT * FROM wardstock_therapy_sessions WHERE session_date >= ?');
 $stmt->execute([$oldestDay . ' 00:00:00']);
 foreach ($stmt->fetchAll() as $row) {
     $d = date('Y-m-d', strtotime($row['session_date']));
@@ -161,7 +161,7 @@ function weight_pill($value, $href, $icon) {
     return '<a class="pill pill-good" href="' . htmlspecialchars($href) . '">' . $icon . ' ' . htmlspecialchars(fmt_amount($value)) . '</a>';
 }
 // Same red/green shape as weight_pill — sleep_efficiency is Oura's own
-// 0-100 score (written into daily_logs by oura_push.php/oura.php, not
+// 0-100 score (written into wardstock_daily_logs by oura_push.php/oura.php, not
 // hand-entered), so no reason for the 3-tier consumption_pill scale here.
 function sleep_pill($value, $href, $icon) {
     if ($value === null) return '<a class="pill pill-bad" href="' . htmlspecialchars($href) . '">' . $icon . '</a>';

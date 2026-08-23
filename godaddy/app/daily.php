@@ -4,7 +4,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$logs = $pdo->query('SELECT * FROM daily_logs ORDER BY log_date DESC')->fetchAll();
+$logs = $pdo->query('SELECT * FROM wardstock_daily_logs ORDER BY log_date DESC')->fetchAll();
 $active = 'daily';
 ?>
 <!doctype html>

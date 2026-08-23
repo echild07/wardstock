@@ -7,7 +7,7 @@ $pdo = get_db();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $session = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT * FROM therapy_sessions WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_therapy_sessions WHERE id = ?');
     $stmt->execute([$id]);
     $session = $stmt->fetch();
     if (!$session) { header('Location: therapy.php'); exit; }
@@ -16,7 +16,7 @@ if ($id) {
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
-        $stmt = $pdo->prepare('DELETE FROM therapy_sessions WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_therapy_sessions WHERE id = ?');
         $stmt->execute([$id]);
         header('Location: therapy.php');
         exit;
@@ -38,13 +38,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         if ($id) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-            $stmt = $pdo->prepare("UPDATE therapy_sessions SET $set WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE wardstock_therapy_sessions SET $set WHERE id = :id");
             $fields['id'] = $id;
             $stmt->execute($fields);
         } else {
             $cols = implode(', ', array_keys($fields));
             $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-            $stmt = $pdo->prepare("INSERT INTO therapy_sessions ($cols) VALUES ($placeholders)");
+            $stmt = $pdo->prepare("INSERT INTO wardstock_therapy_sessions ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
         }
         header('Location: therapy.php');
@@ -71,7 +71,7 @@ $dateValue = $session
 // talked about it" is the actually useful question here (Aug 2026, Ward).
 $contextDateTime = date('Y-m-d H:i:s', strtotime($dateValue));
 $contextDateOnly = date('Y-m-d', strtotime($dateValue));
-$priorStmt = $pdo->prepare('SELECT session_date FROM therapy_sessions WHERE session_date < ?' . ($id ? ' AND id != ?' : '') . ' ORDER BY session_date DESC LIMIT 1');
+$priorStmt = $pdo->prepare('SELECT session_date FROM wardstock_therapy_sessions WHERE session_date < ?' . ($id ? ' AND id != ?' : '') . ' ORDER BY session_date DESC LIMIT 1');
 $id ? $priorStmt->execute([$contextDateTime, $id]) : $priorStmt->execute([$contextDateTime]);
 $priorSessionDateTime = $priorStmt->fetchColumn();
 // No prior session on file (first-ever session) — show everything up to

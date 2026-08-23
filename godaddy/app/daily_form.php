@@ -7,7 +7,7 @@ $pdo = get_db();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $log = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT * FROM daily_logs WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE id = ?');
     $stmt->execute([$id]);
     $log = $stmt->fetch();
     if (!$log) { header('Location: daily.php'); exit; }
@@ -19,7 +19,7 @@ if ($id) {
 $prefillDate = $_GET['date'] ?? null;
 $dateValue = $log ? date('Y-m-d', strtotime($log['log_date'])) : ($prefillDate ?: app_today($pdo)); // fallback was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 
-$stmt = $pdo->prepare("SELECT * FROM medications WHERE med_type = 'scheduled' ORDER BY sort_order, name");
+$stmt = $pdo->prepare("SELECT * FROM wardstock_medications WHERE med_type = 'scheduled' ORDER BY sort_order, name");
 $stmt->execute();
 $medications = array_values(array_filter($stmt->fetchAll(), fn($m) => medication_due_on($m, $dateValue)));
 
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bp_action'])) {
         $systolic = $_POST['bp_systolic'] ?? '';
         $diastolic = $_POST['bp_diastolic'] ?? '';
         if ($readingAt !== '' && $systolic !== '' && $diastolic !== '') {
-            $stmt = $pdo->prepare('INSERT INTO blood_pressure_readings (reading_at, systolic, diastolic, pulse, position, notes) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt = $pdo->prepare('INSERT INTO wardstock_blood_pressure_readings (reading_at, systolic, diastolic, pulse, position, notes) VALUES (?, ?, ?, ?, ?, ?)');
             $stmt->execute([
                 str_replace('T', ' ', $readingAt) . ':00',
                 (int)$systolic,
@@ -52,20 +52,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bp_action'])) {
             ]);
         }
     } elseif ($_POST['bp_action'] === 'delete' && isset($_POST['bp_id'])) {
-        $stmt = $pdo->prepare('DELETE FROM blood_pressure_readings WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_blood_pressure_readings WHERE id = ?');
         $stmt->execute([(int)$_POST['bp_id']]);
     }
     header('Location: daily_form.php?' . $bpBackParam . '#section-bloodpressure');
     exit;
 }
-$stmt = $pdo->prepare('SELECT * FROM blood_pressure_readings WHERE DATE(reading_at) = ? ORDER BY reading_at');
+$stmt = $pdo->prepare('SELECT * FROM wardstock_blood_pressure_readings WHERE DATE(reading_at) = ? ORDER BY reading_at');
 $stmt->execute([$dateValue]);
 $bpReadings = $stmt->fetchAll();
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
-        $stmt = $pdo->prepare('DELETE FROM daily_logs WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_daily_logs WHERE id = ?');
         $stmt->execute([$id]);
         header('Location: daily.php');
         exit;
@@ -109,13 +109,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         if ($id) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-            $stmt = $pdo->prepare("UPDATE daily_logs SET $set WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE wardstock_daily_logs SET $set WHERE id = :id");
             $fields['id'] = $id;
             $stmt->execute($fields);
         } else {
             $cols = implode(', ', array_keys($fields));
             $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-            $stmt = $pdo->prepare("INSERT INTO daily_logs ($cols) VALUES ($placeholders)");
+            $stmt = $pdo->prepare("INSERT INTO wardstock_daily_logs ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
         }
         header('Location: daily.php');

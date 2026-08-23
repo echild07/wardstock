@@ -33,7 +33,7 @@ $errors = [];
 
 try {
     $stmt = $pdo->prepare(
-        'INSERT INTO system_status_reports
+        'INSERT INTO wardstock_system_status_reports
             (category, component, last_run_at, last_status, last_error, detail, expected_frequency_minutes)
          VALUES (:category, :component, :last_run_at, :last_status, :last_error, :detail, :expected_frequency_minutes)
          ON DUPLICATE KEY UPDATE

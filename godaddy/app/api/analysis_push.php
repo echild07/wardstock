@@ -63,7 +63,7 @@ try {
     $cols = implode(', ', array_keys($fields));
     $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
     $updates = implode(', ', array_map(fn($k) => "$k = VALUES($k)", array_keys($fields)));
-    $stmt = $pdo->prepare("INSERT INTO analysis_results ($cols) VALUES ($placeholders)
+    $stmt = $pdo->prepare("INSERT INTO wardstock_analysis_results ($cols) VALUES ($placeholders)
                             ON DUPLICATE KEY UPDATE $updates");
     $stmt->execute($fields);
 

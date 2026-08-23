@@ -6,14 +6,14 @@ function oura_is_configured() {
 }
 
 function oura_get_tokens($pdo) {
-    $stmt = $pdo->query('SELECT * FROM oura_tokens WHERE id = 1');
+    $stmt = $pdo->query('SELECT * FROM wardstock_oura_tokens WHERE id = 1');
     return $stmt->fetch() ?: null;
 }
 
 function oura_save_tokens($pdo, $accessToken, $refreshToken, $expiresInSeconds) {
     $expiresAt = (new DateTime())->modify("+{$expiresInSeconds} seconds")->format('Y-m-d H:i:s');
     $stmt = $pdo->prepare('
-        INSERT INTO oura_tokens (id, access_token, refresh_token, expires_at)
+        INSERT INTO wardstock_oura_tokens (id, access_token, refresh_token, expires_at)
         VALUES (1, :at, :rt, :exp)
         ON DUPLICATE KEY UPDATE access_token = :at2, refresh_token = :rt2, expires_at = :exp2
     ');
@@ -24,7 +24,7 @@ function oura_save_tokens($pdo, $accessToken, $refreshToken, $expiresInSeconds) 
 }
 
 function oura_disconnect($pdo) {
-    $pdo->exec('DELETE FROM oura_tokens WHERE id = 1');
+    $pdo->exec('DELETE FROM wardstock_oura_tokens WHERE id = 1');
 }
 
 // Records that a REAL network call to Oura was made (not just a cache-hit
@@ -33,10 +33,10 @@ function oura_disconnect($pdo) {
 function oura_record_attempt($pdo, $success) {
     $now = (new DateTime())->format('Y-m-d H:i:s');
     if ($success) {
-        $stmt = $pdo->prepare('UPDATE oura_tokens SET last_attempt_at = :now, last_attempt_ok = 1, last_success_at = :now2 WHERE id = 1');
+        $stmt = $pdo->prepare('UPDATE wardstock_oura_tokens SET last_attempt_at = :now, last_attempt_ok = 1, last_success_at = :now2 WHERE id = 1');
         $stmt->execute(['now' => $now, 'now2' => $now]);
     } else {
-        $stmt = $pdo->prepare('UPDATE oura_tokens SET last_attempt_at = :now, last_attempt_ok = 0 WHERE id = 1');
+        $stmt = $pdo->prepare('UPDATE wardstock_oura_tokens SET last_attempt_at = :now, last_attempt_ok = 0 WHERE id = 1');
         $stmt->execute(['now' => $now]);
     }
 }
@@ -221,7 +221,7 @@ function oura_fetch_day($pdo, $date) {
     return $result;
 }
 
-// Shared merge-safe upsert into daily_logs — used by BOTH the manual
+// Shared merge-safe upsert into wardstock_daily_logs — used by BOTH the manual
 // "Pull from Oura" flow (oura_sync.php) and the new api/oura_push.php
 // endpoint (HA's automated push), so there is exactly one place this
 // logic can drift or break, not two implementations to keep in sync.
@@ -231,14 +231,14 @@ function oura_fetch_day($pdo, $date) {
 // Oura data at all and must never be touched by this).
 // Returns the daily_logs row id that was inserted or updated.
 function oura_upsert_daily_log($pdo, $date, $mappedFields) {
-    $existing = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date = ?');
+    $existing = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date = ?');
     $existing->execute([$date]);
     $existingRow = $existing->fetch();
 
     if ($existingRow) {
         $fields = $mappedFields;
         $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-        $stmt = $pdo->prepare("UPDATE daily_logs SET $set WHERE id = :id");
+        $stmt = $pdo->prepare("UPDATE wardstock_daily_logs SET $set WHERE id = :id");
         $fields['id'] = $existingRow['id'];
         $stmt->execute($fields);
         return $existingRow['id'];
@@ -246,7 +246,7 @@ function oura_upsert_daily_log($pdo, $date, $mappedFields) {
         $fields = array_merge(['log_date' => $date], $mappedFields);
         $colList = implode(', ', array_keys($fields));
         $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-        $stmt = $pdo->prepare("INSERT INTO daily_logs ($colList) VALUES ($placeholders)");
+        $stmt = $pdo->prepare("INSERT INTO wardstock_daily_logs ($colList) VALUES ($placeholders)");
         $stmt->execute($fields);
         return $pdo->lastInsertId();
     }

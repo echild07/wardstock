@@ -4,7 +4,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$schedules = $pdo->query('SELECT * FROM therapy_schedules ORDER BY active DESC, session_type')->fetchAll();
+$schedules = $pdo->query('SELECT * FROM wardstock_therapy_schedules ORDER BY active DESC, session_type')->fetchAll();
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
 $subActive = 'therapy';
 $typeLabel = ['individual' => 'Individual', 'couples' => 'Couples', 'other' => 'Other'];

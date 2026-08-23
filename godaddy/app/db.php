@@ -82,7 +82,7 @@ function app_today($pdo) {
 // the new row's start_date — exactly one day later — has just rolled past
 // $rangeEnd).
 function medication_change_lines($pdo, $rangeStart, $rangeEnd) {
-    $stmt = $pdo->prepare('SELECT * FROM medications
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_medications
         WHERE (start_date BETWEEN ? AND ?) OR (end_date BETWEEN ? AND ?)
         ORDER BY COALESCE(end_date, start_date) DESC');
     $stmt->execute([$rangeStart, $rangeEnd, $rangeStart, $rangeEnd]);
@@ -91,7 +91,7 @@ function medication_change_lines($pdo, $rangeStart, $rangeEnd) {
     $lines = [];
     foreach ($medChanges as $m) {
         if ($m['start_date'] >= $rangeStart && $m['start_date'] <= $rangeEnd) {
-            $prevStmt = $pdo->prepare('SELECT dosage FROM medications WHERE name = ? AND end_date = DATE_SUB(?, INTERVAL 1 DAY)');
+            $prevStmt = $pdo->prepare('SELECT dosage FROM wardstock_medications WHERE name = ? AND end_date = DATE_SUB(?, INTERVAL 1 DAY)');
             $prevStmt->execute([$m['name'], $m['start_date']]);
             $prevDosage = $prevStmt->fetchColumn();
             if ($prevDosage !== false) {
@@ -101,7 +101,7 @@ function medication_change_lines($pdo, $rangeStart, $rangeEnd) {
             }
         }
         if ($m['end_date'] && $m['end_date'] >= $rangeStart && $m['end_date'] <= $rangeEnd) {
-            $nextStmt = $pdo->prepare('SELECT id FROM medications WHERE name = ? AND start_date = DATE_ADD(?, INTERVAL 1 DAY)');
+            $nextStmt = $pdo->prepare('SELECT id FROM wardstock_medications WHERE name = ? AND start_date = DATE_ADD(?, INTERVAL 1 DAY)');
             $nextStmt->execute([$m['name'], $m['end_date']]);
             if (!$nextStmt->fetchColumn()) {
                 // Only a genuine discontinuation gets an "Ended" line — if a
@@ -146,7 +146,7 @@ function fmt_hours_minutes($decimalHours) {
 // status_code is one of: success, auth_invalid, malformed_request,
 // validation_error, db_error, unknown_error.
 function log_ha_sync($pdo, $endpoint, $statusCode, $detail = null) {
-    $stmt = $pdo->prepare('INSERT INTO ha_sync_log (endpoint, status_code, detail) VALUES (?, ?, ?)');
+    $stmt = $pdo->prepare('INSERT INTO wardstock_ha_sync_log (endpoint, status_code, detail) VALUES (?, ?, ?)');
     $stmt->execute([$endpoint, $statusCode, $detail]);
 }
 
@@ -159,7 +159,7 @@ function log_ha_sync($pdo, $endpoint, $statusCode, $detail = null) {
 // any source, is always a no-op here). Returns true if a value was
 // written, false if it was left alone (already set).
 function push_weight_if_unset($pdo, $date, $weightLb) {
-    $existing = $pdo->prepare('SELECT id, weight FROM daily_logs WHERE log_date = ?');
+    $existing = $pdo->prepare('SELECT id, weight FROM wardstock_daily_logs WHERE log_date = ?');
     $existing->execute([$date]);
     $row = $existing->fetch();
 
@@ -167,12 +167,12 @@ function push_weight_if_unset($pdo, $date, $weightLb) {
         if ($row['weight'] !== null) {
             return false;
         }
-        $stmt = $pdo->prepare('UPDATE daily_logs SET weight = ? WHERE id = ?');
+        $stmt = $pdo->prepare('UPDATE wardstock_daily_logs SET weight = ? WHERE id = ?');
         $stmt->execute([$weightLb, $row['id']]);
         return true;
     }
 
-    $stmt = $pdo->prepare('INSERT INTO daily_logs (log_date, weight) VALUES (?, ?)');
+    $stmt = $pdo->prepare('INSERT INTO wardstock_daily_logs (log_date, weight) VALUES (?, ?)');
     $stmt->execute([$date, $weightLb]);
     return true;
 }
@@ -233,13 +233,13 @@ function bp_category_tag_class($cat) {
 // Was duplicated separately in export.php and debug.php — consolidated
 // here since more files (the new api/*.php endpoints) now need it too.
 function get_setting($pdo, $key) {
-    $stmt = $pdo->prepare('SELECT setting_value FROM app_settings WHERE setting_key = ?');
+    $stmt = $pdo->prepare('SELECT setting_value FROM wardstock_app_settings WHERE setting_key = ?');
     $stmt->execute([$key]);
     $row = $stmt->fetch();
     return $row ? $row['setting_value'] : null;
 }
 function set_setting($pdo, $key, $value) {
-    $stmt = $pdo->prepare('INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+    $stmt = $pdo->prepare('INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES (?, ?)
                             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
     $stmt->execute([$key, $value]);
 }
@@ -258,7 +258,7 @@ function build_export_records($pdo, $since, $types) {
     $data = ['records' => []];
 
     $medNames = [];
-    foreach ($pdo->query('SELECT id, name FROM medications')->fetchAll() as $m) {
+    foreach ($pdo->query('SELECT id, name FROM wardstock_medications')->fetchAll() as $m) {
         $medNames[(int)$m['id']] = $m['name'];
     }
     $data['state_of_mind_scale'] = [1 => 'Unpleasant', 2 => 'Slightly Unpleasant', 3 => 'Neutral', 4 => 'Slightly Enjoyed', 5 => 'Enjoyed'];
@@ -270,20 +270,20 @@ function build_export_records($pdo, $since, $types) {
         // either date). The table is small; pulling it complete every time
         // is simpler and correct, where a since-filter here would silently
         // miss real changes.
-        foreach ($pdo->query('SELECT * FROM medications ORDER BY sort_order, name')->fetchAll() as $row) {
+        foreach ($pdo->query('SELECT * FROM wardstock_medications ORDER BY sort_order, name')->fetchAll() as $row) {
             $row['record_type'] = 'medication';
             $data['records'][] = $row;
         }
     }
 
     if (in_array('incidents', $types)) {
-        $sql = 'SELECT * FROM incidents' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY occurred_at';
+        $sql = 'SELECT * FROM wardstock_incidents' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY occurred_at';
         $stmt = $pdo->prepare($sql);
         if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
         foreach ($stmt->fetchAll() as $row) { $row['record_type'] = 'incident'; $data['records'][] = $row; }
     }
     if (in_array('daily_logs', $types)) {
-        $sql = 'SELECT * FROM daily_logs' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY log_date';
+        $sql = 'SELECT * FROM wardstock_daily_logs' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY log_date';
         $stmt = $pdo->prepare($sql);
         if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
         foreach ($stmt->fetchAll() as $row) {
@@ -299,7 +299,7 @@ function build_export_records($pdo, $since, $types) {
         }
     }
     if (in_array('therapy_sessions', $types)) {
-        $sql = 'SELECT * FROM therapy_sessions' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY session_date';
+        $sql = 'SELECT * FROM wardstock_therapy_sessions' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY session_date';
         $stmt = $pdo->prepare($sql);
         if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
         foreach ($stmt->fetchAll() as $row) { $row['record_type'] = 'therapy_session'; $data['records'][] = $row; }
@@ -321,7 +321,7 @@ function build_export_records($pdo, $since, $types) {
         // migration hasn't been run yet, skip EKG rather than lose the
         // rest of a disaster-recovery pull to a table that doesn't exist.
         try {
-            $sql = 'SELECT * FROM ecg_recordings' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY recorded_at';
+            $sql = 'SELECT * FROM wardstock_ecg_recordings' . ($since ? ' WHERE updated_at > :since' : '') . ' ORDER BY recorded_at';
             $stmt = $pdo->prepare($sql);
             if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
             foreach ($stmt->fetchAll() as $row) { $row['record_type'] = 'ecg_recording'; $data['records'][] = $row; }
@@ -339,8 +339,8 @@ function build_export_records($pdo, $since, $types) {
         // across a reimport (see import.php's handling of this type) —
         // medications get re-matched/re-inserted by (name, start_date),
         // which can assign a different id on the target database.
-        $sql = 'SELECT h.*, m.name AS medication_name FROM medication_dosage_history h
-                JOIN medications m ON m.id = h.medication_id'
+        $sql = 'SELECT h.*, m.name AS medication_name FROM wardstock_medication_dosage_history h
+                JOIN wardstock_medications m ON m.id = h.medication_id'
                 . ($since ? ' WHERE h.created_at > :since' : '') . ' ORDER BY h.changed_at';
         $stmt = $pdo->prepare($sql);
         if ($since) $stmt->execute(['since' => $since]); else $stmt->execute();
@@ -372,7 +372,7 @@ function build_export_records($pdo, $since, $types) {
 // error; bulk_restore.php returns it as a 500 JSON response).
 function import_records($pdo, array $records) {
     $medLookup = [];
-    foreach ($pdo->query('SELECT id, name FROM medications')->fetchAll() as $m) {
+    foreach ($pdo->query('SELECT id, name FROM wardstock_medications')->fetchAll() as $m) {
         $medLookup[$m['name']] = (int)$m['id'];
     }
 
@@ -415,7 +415,7 @@ function import_records($pdo, array $records) {
                 if (empty($fields['category'])) $fields['category'] = 'anxiety'; // NOT NULL column
                 $colList = implode(', ', array_keys($fields));
                 $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-                $stmt = $pdo->prepare("INSERT INTO incidents ($colList) VALUES ($placeholders)");
+                $stmt = $pdo->prepare("INSERT INTO wardstock_incidents ($colList) VALUES ($placeholders)");
                 $stmt->execute($fields);
                 $counts['incident']['inserted']++;
 
@@ -427,7 +427,7 @@ function import_records($pdo, array $records) {
                          'caffeine_servings', 'alcohol', 'alcohol_drinks', 'medication_notes',
                          'mood_rating', 'state_of_mind', 'free_notes'];
 
-                $existing = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date = ?');
+                $existing = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date = ?');
                 $existing->execute([$rec['log_date']]);
                 $existingRow = $existing->fetch();
 
@@ -469,14 +469,14 @@ function import_records($pdo, array $records) {
 
                 if ($existingRow) {
                     $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("UPDATE daily_logs SET $set WHERE id = :id");
+                    $stmt = $pdo->prepare("UPDATE wardstock_daily_logs SET $set WHERE id = :id");
                     $fields['id'] = $existingRow['id'];
                     $stmt->execute($fields);
                     $counts['daily_log']['updated']++;
                 } else {
                     $colList = implode(', ', array_keys($fields));
                     $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("INSERT INTO daily_logs ($colList) VALUES ($placeholders)");
+                    $stmt = $pdo->prepare("INSERT INTO wardstock_daily_logs ($colList) VALUES ($placeholders)");
                     $stmt->execute($fields);
                     $counts['daily_log']['inserted']++;
                 }
@@ -485,7 +485,7 @@ function import_records($pdo, array $records) {
                 if (empty($rec['session_date'])) { $counts['therapy_session']['skipped']++; continue; }
                 $cols = ['session_type', 'summary', 'insights', 'homework', 'mood_before', 'mood_after', 'free_notes'];
 
-                $existing = $pdo->prepare('SELECT * FROM therapy_sessions WHERE session_date = ? AND session_type = ?');
+                $existing = $pdo->prepare('SELECT * FROM wardstock_therapy_sessions WHERE session_date = ? AND session_type = ?');
                 $existing->execute([$rec['session_date'], $rec['session_type'] ?? 'individual']);
                 $existingRow = $existing->fetch();
 
@@ -502,14 +502,14 @@ function import_records($pdo, array $records) {
 
                 if ($existingRow) {
                     $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("UPDATE therapy_sessions SET $set WHERE id = :id");
+                    $stmt = $pdo->prepare("UPDATE wardstock_therapy_sessions SET $set WHERE id = :id");
                     $fields['id'] = $existingRow['id'];
                     $stmt->execute($fields);
                     $counts['therapy_session']['updated']++;
                 } else {
                     $colList = implode(', ', array_keys($fields));
                     $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("INSERT INTO therapy_sessions ($colList) VALUES ($placeholders)");
+                    $stmt = $pdo->prepare("INSERT INTO wardstock_therapy_sessions ($colList) VALUES ($placeholders)");
                     $stmt->execute($fields);
                     $counts['therapy_session']['inserted']++;
                 }
@@ -525,7 +525,7 @@ function import_records($pdo, array $records) {
                 if (empty($rec['name']) || empty($rec['start_date'])) { $counts['medication']['skipped']++; continue; }
                 $cols = ['dosage', 'med_type', 'cadence', 'frequency_days', 'end_date', 'sort_order'];
 
-                $existing = $pdo->prepare('SELECT * FROM medications WHERE name = ? AND start_date = ?');
+                $existing = $pdo->prepare('SELECT * FROM wardstock_medications WHERE name = ? AND start_date = ?');
                 $existing->execute([$rec['name'], $rec['start_date']]);
                 $existingRow = $existing->fetch();
 
@@ -542,14 +542,14 @@ function import_records($pdo, array $records) {
 
                 if ($existingRow) {
                     $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("UPDATE medications SET $set WHERE id = :id");
+                    $stmt = $pdo->prepare("UPDATE wardstock_medications SET $set WHERE id = :id");
                     $fields['id'] = $existingRow['id'];
                     $stmt->execute($fields);
                     $counts['medication']['updated']++;
                 } else {
                     $colList = implode(', ', array_keys($fields));
                     $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("INSERT INTO medications ($colList) VALUES ($placeholders)");
+                    $stmt = $pdo->prepare("INSERT INTO wardstock_medications ($colList) VALUES ($placeholders)");
                     $stmt->execute($fields);
                     $counts['medication']['inserted']++;
                 }
@@ -568,16 +568,16 @@ function import_records($pdo, array $records) {
                 if (empty($rec['medication_name']) || empty($rec['changed_at'])) {
                     $counts['medication_dosage_history']['skipped']++; continue;
                 }
-                $medRow = $pdo->prepare('SELECT id FROM medications WHERE name = ? AND start_date = ?');
+                $medRow = $pdo->prepare('SELECT id FROM wardstock_medications WHERE name = ? AND start_date = ?');
                 $medRow->execute([$rec['medication_name'], substr($rec['changed_at'], 0, 10)]);
                 $medId = $medRow->fetchColumn();
                 if (!$medId) { $counts['medication_dosage_history']['skipped']++; continue; }
 
-                $existing = $pdo->prepare('SELECT id FROM medication_dosage_history WHERE medication_id = ? AND changed_at = ?');
+                $existing = $pdo->prepare('SELECT id FROM wardstock_medication_dosage_history WHERE medication_id = ? AND changed_at = ?');
                 $existing->execute([$medId, $rec['changed_at']]);
                 if ($existing->fetch()) { $counts['medication_dosage_history']['skipped']++; continue; }
 
-                $stmt = $pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
+                $stmt = $pdo->prepare('INSERT INTO wardstock_medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?, ?, ?, ?, ?)');
                 $stmt->execute([$medId, $rec['old_dosage'] ?? null, $rec['new_dosage'] ?? '', $rec['changed_at'], $rec['notes'] ?? null]);
                 $counts['medication_dosage_history']['inserted']++;
 
@@ -601,7 +601,7 @@ function import_records($pdo, array $records) {
                          'notes', 'clinician_reviewed', 'clinician_interpretation', 'clinician_reviewer_name',
                          'clinician_reviewed_at'];
 
-                $existing = $pdo->prepare('SELECT * FROM ecg_recordings WHERE recorded_at = ? AND device_product = ?');
+                $existing = $pdo->prepare('SELECT * FROM wardstock_ecg_recordings WHERE recorded_at = ? AND device_product = ?');
                 $existing->execute([$rec['recorded_at'], $rec['device_product'] ?? 'KardiaMobile']);
                 $existingRow = $existing->fetch();
 
@@ -622,14 +622,14 @@ function import_records($pdo, array $records) {
 
                 if ($existingRow) {
                     $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("UPDATE ecg_recordings SET $set WHERE id = :id");
+                    $stmt = $pdo->prepare("UPDATE wardstock_ecg_recordings SET $set WHERE id = :id");
                     $fields['id'] = $existingRow['id'];
                     $stmt->execute($fields);
                     $counts['ecg_recording']['updated']++;
                 } else {
                     $colList = implode(', ', array_keys($fields));
                     $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-                    $stmt = $pdo->prepare("INSERT INTO ecg_recordings ($colList) VALUES ($placeholders)");
+                    $stmt = $pdo->prepare("INSERT INTO wardstock_ecg_recordings ($colList) VALUES ($placeholders)");
                     $stmt->execute($fields);
                     $counts['ecg_recording']['inserted']++;
                 }

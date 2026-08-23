@@ -7,7 +7,7 @@ $pdo = get_db();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $sched = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT * FROM therapy_schedules WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_therapy_schedules WHERE id = ?');
     $stmt->execute([$id]);
     $sched = $stmt->fetch();
     if (!$sched) { header('Location: therapy_schedules.php'); exit; }
@@ -16,7 +16,7 @@ if ($id) {
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
-        $stmt = $pdo->prepare('DELETE FROM therapy_schedules WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_therapy_schedules WHERE id = ?');
         $stmt->execute([$id]);
         header('Location: therapy_schedules.php');
         exit;
@@ -34,13 +34,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         if ($id) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-            $stmt = $pdo->prepare("UPDATE therapy_schedules SET $set WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE wardstock_therapy_schedules SET $set WHERE id = :id");
             $fields['id'] = $id;
             $stmt->execute($fields);
         } else {
             $cols = implode(', ', array_keys($fields));
             $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-            $stmt = $pdo->prepare("INSERT INTO therapy_schedules ($cols) VALUES ($placeholders)");
+            $stmt = $pdo->prepare("INSERT INTO wardstock_therapy_schedules ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
         }
         header('Location: therapy_schedules.php');

@@ -2,7 +2,7 @@
 require_once __DIR__ . '/db.php';
 
 $pdo = get_db();
-$users = $pdo->query('SELECT id, username FROM app_user')->fetchAll();
+$users = $pdo->query('SELECT id, username FROM wardstock_app_user')->fetchAll();
 
 $message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -12,10 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'Password must be at least 8 characters.';
     } else {
         $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $pdo->prepare('UPDATE app_user SET password_hash = ? WHERE id = ?');
+        $stmt = $pdo->prepare('UPDATE wardstock_app_user SET password_hash = ? WHERE id = ?');
         $stmt->execute([$hash, $userId]);
         $message = 'Password updated. Now DELETE this file (reset_password.php) from your server, then log in with the new password.';
-        $users = $pdo->query('SELECT id, username FROM app_user')->fetchAll(); // refresh
+        $users = $pdo->query('SELECT id, username FROM wardstock_app_user')->fetchAll(); // refresh
     }
 }
 ?>

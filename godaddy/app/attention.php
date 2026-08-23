@@ -46,7 +46,7 @@ function therapy_due_types($schedules, $day) {
 }
 
 function is_reminder_snoozed($pdo, $key) {
-    $stmt = $pdo->prepare('SELECT 1 FROM attention_snoozes WHERE reminder_key = ?');
+    $stmt = $pdo->prepare('SELECT 1 FROM wardstock_attention_snoozes WHERE reminder_key = ?');
     $stmt->execute([$key]);
     return (bool)$stmt->fetch();
 }
@@ -56,7 +56,7 @@ function snooze_reminder($pdo, $key) {
     // timezone (real bug, Aug 2026, same class as everything else in
     // this pass — Ward's day, not the server's, decides which day a
     // snooze belongs to). Bound param using app_today() instead.
-    $stmt = $pdo->prepare('INSERT IGNORE INTO attention_snoozes (reminder_key, snoozed_on) VALUES (?, ?)');
+    $stmt = $pdo->prepare('INSERT IGNORE INTO wardstock_attention_snoozes (reminder_key, snoozed_on) VALUES (?, ?)');
     $stmt->execute([$key, app_today($pdo)]);
 }
 
@@ -66,10 +66,10 @@ function get_attention_items($pdo) {
     $today = app_today($pdo); // was date('Y-m-d') — server default (UTC), not Ward's actual day (Aug 2026 fix)
 
     // ---- Medicine not fully taken today ----
-    $allMeds = $pdo->query("SELECT * FROM medications WHERE med_type = 'scheduled' ORDER BY sort_order")->fetchAll();
+    $allMeds = $pdo->query("SELECT * FROM wardstock_medications WHERE med_type = 'scheduled' ORDER BY sort_order")->fetchAll();
     $validIds = meds_valid_on($allMeds, $today);
     if ($validIds) {
-        $stmt = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date = ?');
+        $stmt = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date = ?');
         $stmt->execute([$today]);
         $log = $stmt->fetch();
         $taken = [];
@@ -90,7 +90,7 @@ function get_attention_items($pdo) {
     }
 
     // ---- No weigh-in today ----
-    $stmt = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date = ?');
     $stmt->execute([$today]);
     $todayLog = $stmt->fetch();
     if (!$todayLog || $todayLog['weight'] === null) {
@@ -105,7 +105,7 @@ function get_attention_items($pdo) {
     // ---- Therapy scheduled today or yesterday, no notes logged, past the
     // day's 5pm EoD cutoff (today only — yesterday's cutoff has obviously
     // already passed) ----
-    $schedules = $pdo->query('SELECT * FROM therapy_schedules WHERE active = 1')->fetchAll();
+    $schedules = $pdo->query('SELECT * FROM wardstock_therapy_schedules WHERE active = 1')->fetchAll();
     // Both were server-clock bugs (Aug 2026 fix) — $yesterday used
     // date('Y-m-d', strtotime('-1 day')) (server "today" minus a day,
     // not Ward's), and the cutoff check used date('G') (server's current
@@ -116,7 +116,7 @@ function get_attention_items($pdo) {
     foreach ([$today => $pastCutoffToday, $yesterday => true] as $day => $applies) {
         if (!$applies) continue;
         foreach (therapy_due_types($schedules, $day) as $type) {
-            $stmt = $pdo->prepare("SELECT id FROM therapy_sessions WHERE session_type = ? AND DATE(session_date) = ?");
+            $stmt = $pdo->prepare("SELECT id FROM wardstock_therapy_sessions WHERE session_type = ? AND DATE(session_date) = ?");
             $stmt->execute([$type, $day]);
             if ($stmt->fetch()) continue; // already logged
             $key = "therapy_{$type}_$day";
@@ -129,7 +129,7 @@ function get_attention_items($pdo) {
     }
 
     // ---- Oura sync gone stale ----
-    $stmt = $pdo->prepare("SELECT * FROM system_status_reports WHERE component = 'oura_sync'");
+    $stmt = $pdo->prepare("SELECT * FROM wardstock_system_status_reports WHERE component = 'oura_sync'");
     $stmt->execute();
     $ouraRow = $stmt->fetch();
     if ($ouraRow) {
@@ -149,5 +149,5 @@ function get_attention_items($pdo) {
 // Pending "hypothetical" correlation events awaiting confirm/deny
 // (feature list §3.2.2). Not snoozable, not date-scoped.
 function get_pending_event_count($pdo) {
-    return (int)$pdo->query("SELECT COUNT(*) c FROM proposed_events WHERE status = 'pending'")->fetch()['c'];
+    return (int)$pdo->query("SELECT COUNT(*) c FROM wardstock_proposed_events WHERE status = 'pending'")->fetch()['c'];
 }

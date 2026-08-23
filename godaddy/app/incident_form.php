@@ -7,7 +7,7 @@ $pdo = get_db();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $incident = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT * FROM incidents WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_incidents WHERE id = ?');
     $stmt->execute([$id]);
     $incident = $stmt->fetch();
     if (!$incident) { header('Location: incidents.php'); exit; }
@@ -18,7 +18,7 @@ $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
-        $stmt = $pdo->prepare('DELETE FROM incidents WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_incidents WHERE id = ?');
         $stmt->execute([$id]);
         header('Location: incidents.php');
         exit;
@@ -56,13 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         if ($id) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-            $stmt = $pdo->prepare("UPDATE incidents SET $set WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE wardstock_incidents SET $set WHERE id = :id");
             $fields['id'] = $id;
             $stmt->execute($fields);
         } else {
             $cols = implode(', ', array_keys($fields));
             $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-            $stmt = $pdo->prepare("INSERT INTO incidents ($cols) VALUES ($placeholders)");
+            $stmt = $pdo->prepare("INSERT INTO wardstock_incidents ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
         }
         header('Location: incident_form.php?id=' . ($id ?: $pdo->lastInsertId()) . '&saved=1');
@@ -84,7 +84,7 @@ $categoryVal = $formData
     : (in_array($_GET['category'] ?? '', ['cardiac', 'medical'], true) ? $_GET['category'] : 'anxiety');
 
 // Medications list, for the related_medication_id dropdown (medical category only).
-$allMeds = $pdo->query('SELECT id, name, dosage FROM medications ORDER BY sort_order, name')->fetchAll();
+$allMeds = $pdo->query('SELECT id, name, dosage FROM wardstock_medications ORDER BY sort_order, name')->fetchAll();
 
 // Context date: the day this form is operating on — the incident's own date when
 // editing, or ?date= from the dashboard, or left null so JS fills in local "today".
@@ -106,7 +106,7 @@ if ($formData && !empty($formData['occurred_at'])) {
 $endedValue = ($formData && !empty($formData['ended_at'])) ? date('Y-m-d\TH:i', strtotime($formData['ended_at'])) : '';
 
 // Other incidents on the same day, for the table below the form.
-$sql = 'SELECT * FROM incidents WHERE DATE(occurred_at) = ?' . ($id ? ' AND id != ?' : '') . ' ORDER BY occurred_at';
+$sql = 'SELECT * FROM wardstock_incidents WHERE DATE(occurred_at) = ?' . ($id ? ' AND id != ?' : '') . ' ORDER BY occurred_at';
 $stmt = $pdo->prepare($sql);
 $id ? $stmt->execute([$contextDate, $id]) : $stmt->execute([$contextDate]);
 $sameDay = $stmt->fetchAll();

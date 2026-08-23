@@ -10,7 +10,7 @@ require_login();
 
 $pdo = get_db();
 $artifactId = isset($_GET['artifact_id']) ? (int)$_GET['artifact_id'] : 0;
-$stmt = $pdo->prepare('SELECT * FROM ecg_artifacts WHERE id = ?');
+$stmt = $pdo->prepare('SELECT * FROM wardstock_ecg_artifacts WHERE id = ?');
 $stmt->execute([$artifactId]);
 $artifact = $stmt->fetch();
 if (!$artifact) {

@@ -152,7 +152,7 @@ $errorMeanings = [
 // Fuller history than oura_sync.php's latest-per-endpoint view — for
 // spotting a pattern of failures, not just the most recent result.
 // See homeassistant/PLAN.md §7.
-$haSyncHistory = $pdo->query('SELECT * FROM ha_sync_log ORDER BY called_at DESC LIMIT 50')->fetchAll();
+$haSyncHistory = $pdo->query('SELECT * FROM wardstock_ha_sync_log ORDER BY called_at DESC LIMIT 50')->fetchAll();
 ?>
 <!doctype html>
 <html>

@@ -24,7 +24,7 @@ $pdo = get_db();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $recording = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT * FROM ecg_recordings WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_ecg_recordings WHERE id = ?');
     $stmt->execute([$id]);
     $recording = $stmt->fetch();
     if (!$recording) { header('Location: ecg.php'); exit; }
@@ -79,14 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete']) && $id) {
         // ecg_artifacts rows cascade via the FK's ON DELETE CASCADE — no
         // separate cleanup needed here.
-        $stmt = $pdo->prepare('DELETE FROM ecg_recordings WHERE id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_ecg_recordings WHERE id = ?');
         $stmt->execute([$id]);
         header('Location: ecg.php');
         exit;
     }
 
     if (isset($_POST['delete_artifact']) && $id) {
-        $stmt = $pdo->prepare('DELETE FROM ecg_artifacts WHERE id = ? AND recording_id = ?');
+        $stmt = $pdo->prepare('DELETE FROM wardstock_ecg_artifacts WHERE id = ? AND recording_id = ?');
         $stmt->execute([(int)$_POST['delete_artifact'], $id]);
         header('Location: ecg_form.php?id=' . $id);
         exit;
@@ -121,14 +121,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         if ($id) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
-            $stmt = $pdo->prepare("UPDATE ecg_recordings SET $set WHERE id = :id");
+            $stmt = $pdo->prepare("UPDATE wardstock_ecg_recordings SET $set WHERE id = :id");
             $fields['id'] = $id;
             $stmt->execute($fields);
             $savedId = $id;
         } else {
             $cols = implode(', ', array_keys($fields));
             $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-            $stmt = $pdo->prepare("INSERT INTO ecg_recordings ($cols) VALUES ($placeholders)");
+            $stmt = $pdo->prepare("INSERT INTO wardstock_ecg_recordings ($cols) VALUES ($placeholders)");
             $stmt->execute($fields);
             $savedId = (int)$pdo->lastInsertId();
         }
@@ -138,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // does now exist, not a blank "New" form — the record was already
         // committed above regardless of what happens to the file.
         $id = $savedId;
-        $stmt = $pdo->prepare('SELECT * FROM ecg_recordings WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT * FROM wardstock_ecg_recordings WHERE id = ?');
         $stmt->execute([$id]);
         $recording = $stmt->fetch(); // so the header below reads "Edit", not "New", if a PDF error keeps us on this page
 
@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $bytes = file_get_contents($_FILES['pdf']['tmp_name']);
                     $sha256 = hash('sha256', $bytes);
                     try {
-                        $stmt = $pdo->prepare('INSERT INTO ecg_artifacts (recording_id, artifact_type, original_filename, mime_type, byte_size, sha256, file_blob)
+                        $stmt = $pdo->prepare('INSERT INTO wardstock_ecg_artifacts (recording_id, artifact_type, original_filename, mime_type, byte_size, sha256, file_blob)
                                                 VALUES (?, ?, ?, ?, ?, ?, ?)');
                         $stmt->execute([$savedId, 'kardia_pdf_report', $_FILES['pdf']['name'], $mime, strlen($bytes), $sha256, $bytes]);
                     } catch (PDOException $e) {
@@ -198,10 +198,10 @@ if ($formData && !empty($formData['symptoms_json'])) {
     }
 }
 
-$artifacts = $id ? $pdo->prepare('SELECT id, original_filename, mime_type, byte_size, created_at FROM ecg_artifacts WHERE recording_id = ? ORDER BY created_at') : null;
+$artifacts = $id ? $pdo->prepare('SELECT id, original_filename, mime_type, byte_size, created_at FROM wardstock_ecg_artifacts WHERE recording_id = ? ORDER BY created_at') : null;
 if ($artifacts) { $artifacts->execute([$id]); $artifacts = $artifacts->fetchAll(); } else { $artifacts = []; }
 
-$recentIncidents = $pdo->query('SELECT id, occurred_at, category FROM incidents ORDER BY occurred_at DESC LIMIT 50')->fetchAll();
+$recentIncidents = $pdo->query('SELECT id, occurred_at, category FROM wardstock_incidents ORDER BY occurred_at DESC LIMIT 50')->fetchAll();
 
 $active = 'ecg';
 ?>

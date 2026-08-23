@@ -60,7 +60,7 @@ $ringResp = $tokens ? oura_api_get($pdo, 'ring_configuration') : null;
 // homeassistant/PLAN.md §7, §8).
 $haLatestByEndpoint = [];
 foreach (['oura_push', 'pull_manual_data', 'status', 'weight_push', 'status_push', 'get_shared_config'] as $ep) {
-    $stmt = $pdo->prepare('SELECT * FROM ha_sync_log WHERE endpoint = ? ORDER BY called_at DESC LIMIT 1');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_ha_sync_log WHERE endpoint = ? ORDER BY called_at DESC LIMIT 1');
     $stmt->execute([$ep]);
     $haLatestByEndpoint[$ep] = $stmt->fetch();
 }

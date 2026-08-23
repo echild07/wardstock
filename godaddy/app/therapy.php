@@ -4,7 +4,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$sessions = $pdo->query('SELECT * FROM therapy_sessions ORDER BY session_date DESC')->fetchAll();
+$sessions = $pdo->query('SELECT * FROM wardstock_therapy_sessions ORDER BY session_date DESC')->fetchAll();
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18) — Ward's own reasoning: therapy is itself a form of analysis
 $subActive = 'therapy';
 $typeLabel = ['individual' => 'Individual', 'couples' => 'Couples', 'other' => 'Other'];
@@ -22,11 +22,11 @@ if ($lastSession) {
     $since = $lastSession['session_date'];
     $sinceDate = date('Y-m-d', strtotime($since));
 
-    $stmt = $pdo->prepare('SELECT * FROM incidents WHERE occurred_at > ? ORDER BY occurred_at DESC');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_incidents WHERE occurred_at > ? ORDER BY occurred_at DESC');
     $stmt->execute([$since]);
     $reportIncidents = $stmt->fetchAll();
 
-    $stmt = $pdo->prepare('SELECT * FROM daily_logs WHERE log_date >= ? ORDER BY log_date');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date >= ? ORDER BY log_date');
     $stmt->execute([$sinceDate]);
     $reportDailyLogs = $stmt->fetchAll();
 

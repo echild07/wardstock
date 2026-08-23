@@ -13,7 +13,7 @@ $dbError = null;
 $count = 0;
 try {
     $pdo = get_db();
-    $count = $pdo->query('SELECT COUNT(*) AS c FROM app_user')->fetch()['c'];
+    $count = $pdo->query('SELECT COUNT(*) AS c FROM wardstock_app_user')->fetch()['c'];
 } catch (Throwable $e) {
     $dbError = $e->getMessage();
 }
@@ -30,7 +30,7 @@ if ($dbError !== null) {
         $message = 'Username required and password must be at least 8 characters.';
     } else {
         $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $pdo->prepare('INSERT INTO app_user (username, password_hash) VALUES (?, ?)');
+        $stmt = $pdo->prepare('INSERT INTO wardstock_app_user (username, password_hash) VALUES (?, ?)');
         $stmt->execute([$username, $hash]);
         $message = 'User created. Now DELETE this file (setup.php) from your server, then go to login.php.';
     }

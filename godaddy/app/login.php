@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     $pdo = get_db();
-    $stmt = $pdo->prepare('SELECT * FROM app_user WHERE username = ?');
+    $stmt = $pdo->prepare('SELECT * FROM wardstock_app_user WHERE username = ?');
     $stmt->execute([$username]);
     $user = $stmt->fetch();
     if ($user && password_verify($password, $user['password_hash'])) {
@@ -61,7 +61,7 @@ if ($health['dbConnected']) {
         error_log('WardStock login health-check: schema check failed: ' . $e->getMessage());
     }
     try {
-        $health['hasAccount'] = (int)$healthPdo->query('SELECT COUNT(*) c FROM app_user')->fetch()['c'] > 0;
+        $health['hasAccount'] = (int)$healthPdo->query('SELECT COUNT(*) c FROM wardstock_app_user')->fetch()['c'] > 0;
     } catch (Throwable $e) {
         error_log('WardStock login health-check: app_user check failed: ' . $e->getMessage());
     }

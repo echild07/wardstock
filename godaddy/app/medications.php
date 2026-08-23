@@ -4,7 +4,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$meds = $pdo->query('SELECT * FROM medications ORDER BY name, start_date DESC')->fetchAll();
+$meds = $pdo->query('SELECT * FROM wardstock_medications ORDER BY name, start_date DESC')->fetchAll();
 $today = app_today($pdo); // was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 $active = 'medications';
 

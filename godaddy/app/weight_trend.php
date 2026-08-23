@@ -5,7 +5,7 @@ require_login();
 
 $pdo = get_db();
 $startDate = app_now($pdo)->modify('-60 days')->format('Y-m-d'); // was new DateTime('today') — server default, not Ward's actual today (Aug 2026 fix)
-$stmt = $pdo->prepare('SELECT log_date, weight FROM daily_logs WHERE log_date >= ? AND weight IS NOT NULL ORDER BY log_date');
+$stmt = $pdo->prepare('SELECT log_date, weight FROM wardstock_daily_logs WHERE log_date >= ? AND weight IS NOT NULL ORDER BY log_date');
 $stmt->execute([$startDate]);
 $points = $stmt->fetchAll();
 

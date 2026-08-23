@@ -4,7 +4,7 @@ require_once __DIR__ . '/auth.php';
 require_login();
 
 $pdo = get_db();
-$incidents = $pdo->query('SELECT * FROM incidents ORDER BY occurred_at DESC')->fetchAll();
+$incidents = $pdo->query('SELECT * FROM wardstock_incidents ORDER BY occurred_at DESC')->fetchAll();
 
 function level_class($v) {
     $map = ['none' => 'lvl-none', 'mild' => 'lvl-mild', 'moderate' => 'lvl-moderate', 'severe' => 'lvl-severe'];

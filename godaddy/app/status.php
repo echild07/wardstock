@@ -2,7 +2,7 @@
 // Lucius project — consolidated HA / Node-RED / Analytics status page
 // (PLAN.md §15). Ward's stated goal: "is something wrong, and where" at
 // a glance, from the one place that's always reachable, without needing
-// to log into HA/Node-RED at all. Data comes from system_status_reports,
+// to log into HA/Node-RED at all. Data comes from wardstock_system_status_reports,
 // upserted by the HA-side "Status Heartbeat" flow every 15 min via
 // api/status_push.php — this page itself never talks to HA directly.
 require_once __DIR__ . '/db.php';
@@ -13,7 +13,7 @@ $pdo = get_db();
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
 $subActive = 'status';
 
-$rows = $pdo->query('SELECT * FROM system_status_reports ORDER BY category, component')->fetchAll();
+$rows = $pdo->query('SELECT * FROM wardstock_system_status_reports ORDER BY category, component')->fetchAll();
 
 $byCategory = ['ha' => [], 'nodered' => [], 'analytics' => []];
 foreach ($rows as $r) {

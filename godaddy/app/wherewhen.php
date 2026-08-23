@@ -21,8 +21,8 @@ require_login();
 $pdo = get_db();
 $active = 'wherewhen';
 
-$analysisCount = (int)$pdo->query('SELECT COUNT(DISTINCT analysis_key) c FROM analysis_results')->fetch()['c'];
-$therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fetch()['c'];
+$analysisCount = (int)$pdo->query('SELECT COUNT(DISTINCT analysis_key) c FROM wardstock_analysis_results')->fetch()['c'];
+$therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM wardstock_therapy_sessions')->fetch()['c'];
 ?>
 <!doctype html>
 <html>

@@ -27,6 +27,12 @@
 //   bumps, for every product at once — don't invent a new one, and don't
 //   bump this product's major number alone without also updating
 //   leeward/VERSIONS.md and the other products.
+//   Bumped Data to 1 (4.0 -> 4.1) for the table-prefix convention (Ward,
+//   Aug 2026, leeward/STANDARDS.md §5): every table renamed
+//   `wardstock_{tablename}` so multiple LeeWard products can eventually
+//   share one MySQL database without name collisions. Rename-only —
+//   columns/relationships unchanged — see sql/upgrade_from_4.0.0.sql for
+//   the idempotent RENAME TABLE migration.
 // - APP_VERSION_DATA (also APP_VERSION_SQL): bump ONLY when persisted
 //   storage format changes — sql/, SQLite, Influx measurement/tag/field
 //   layout, or another restore contract. Resets CODE to 0. The database
@@ -44,7 +50,7 @@
 
 define('APP_VERSION_NAME', 'Drew');
 define('APP_VERSION_MAJOR', 4);
-define('APP_VERSION_DATA', 0);
+define('APP_VERSION_DATA', 1);
 define('APP_VERSION_SQL', APP_VERSION_DATA);
 define('APP_VERSION_CODE', 0);
 define('APP_VERSION_SCHEMA', sprintf('%d.%d', APP_VERSION_MAJOR, APP_VERSION_DATA));

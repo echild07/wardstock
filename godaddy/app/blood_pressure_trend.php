@@ -11,7 +11,7 @@ require_login();
 
 $pdo = get_db();
 $startDate = app_now($pdo)->modify('-60 days')->format('Y-m-d'); // was new DateTime('today') — server default, not Ward's actual today (Aug 2026 fix)
-$stmt = $pdo->prepare('SELECT * FROM blood_pressure_readings WHERE reading_at >= ? ORDER BY reading_at');
+$stmt = $pdo->prepare('SELECT * FROM wardstock_blood_pressure_readings WHERE reading_at >= ? ORDER BY reading_at');
 $stmt->execute([$startDate . ' 00:00:00']);
 $points = $stmt->fetchAll();
 

@@ -13,7 +13,7 @@ $pdo = get_db();
 // A friendly message here beats a raw 500 on a table that doesn't exist yet.
 $schemaMissing = false;
 try {
-    $recordings = $pdo->query('SELECT * FROM ecg_recordings ORDER BY recorded_at DESC')->fetchAll();
+    $recordings = $pdo->query('SELECT * FROM wardstock_ecg_recordings ORDER BY recorded_at DESC')->fetchAll();
 } catch (Throwable $e) {
     $schemaMissing = true;
     $recordings = [];

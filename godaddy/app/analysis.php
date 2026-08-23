@@ -26,22 +26,22 @@ $subActive = 'analysis';
 // record, just excluded from the pending queue.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proposed_event_id'], $_POST['decision'])) {
     $peId = (int)$_POST['proposed_event_id'];
-    $stmt = $pdo->prepare("SELECT * FROM proposed_events WHERE id = ? AND status = 'pending'");
+    $stmt = $pdo->prepare("SELECT * FROM wardstock_proposed_events WHERE id = ? AND status = 'pending'");
     $stmt->execute([$peId]);
     $pe = $stmt->fetch();
     if ($pe) {
         if ($_POST['decision'] === 'confirm') {
-            $ins = $pdo->prepare('INSERT INTO incidents (category, occurred_at, free_notes) VALUES (?, ?, ?)');
+            $ins = $pdo->prepare('INSERT INTO wardstock_incidents (category, occurred_at, free_notes) VALUES (?, ?, ?)');
             $ins->execute([
                 $pe['suggested_category'] ?: 'anxiety',
                 $pe['suggested_occurred_at'] ?: $pe['proposed_at'],
                 "Created from a wherewhen-proposed correlation event (confirmed): " . $pe['description'],
             ]);
             $newIncidentId = (int)$pdo->lastInsertId();
-            $upd = $pdo->prepare("UPDATE proposed_events SET status = 'confirmed', reviewed_at = NOW(), created_incident_id = ? WHERE id = ?");
+            $upd = $pdo->prepare("UPDATE wardstock_proposed_events SET status = 'confirmed', reviewed_at = NOW(), created_incident_id = ? WHERE id = ?");
             $upd->execute([$newIncidentId, $peId]);
         } elseif ($_POST['decision'] === 'deny') {
-            $upd = $pdo->prepare("UPDATE proposed_events SET status = 'denied', reviewed_at = NOW() WHERE id = ?");
+            $upd = $pdo->prepare("UPDATE wardstock_proposed_events SET status = 'denied', reviewed_at = NOW() WHERE id = ?");
             $upd->execute([$peId]);
         }
     }
@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proposed_event_id'], 
     exit;
 }
 
-$pendingEvents = $pdo->query("SELECT * FROM proposed_events WHERE status = 'pending' ORDER BY proposed_at DESC")->fetchAll();
+$pendingEvents = $pdo->query("SELECT * FROM wardstock_proposed_events WHERE status = 'pending' ORDER BY proposed_at DESC")->fetchAll();
 
 // One row per (analysis_key, period_type) — the database itself now
 // guarantees this (analysis_results' UNIQUE KEY, schema.sql), so no
@@ -79,7 +79,7 @@ $pendingEvents = $pdo->query("SELECT * FROM proposed_events WHERE status = 'pend
 $validPeriods = ['all', 'monthly', 'weekly', 'daily'];
 $selectedPeriod = in_array($_GET['period'] ?? '', $validPeriods, true) ? $_GET['period'] : null;
 $tierPreference = ['all' => 0, 'monthly' => 1, 'weekly' => 2, 'daily' => 3]; // lower = shown preferentially
-$allResults = $pdo->query('SELECT * FROM analysis_results')->fetchAll();
+$allResults = $pdo->query('SELECT * FROM wardstock_analysis_results')->fetchAll();
 $byKey = [];
 foreach ($allResults as $row) {
     $key = $row['analysis_key'];

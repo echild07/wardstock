@@ -72,7 +72,7 @@ $demoMeds = [
 ];
 $medIds = [];      // name => id, every medication
 $dailyMedIds = [];  // id list, scheduled ("taken daily-ish") meds only -- what daily_logs picks from
-$stmt = $pdo->prepare('INSERT INTO medications (name, dosage, med_type, cadence, frequency_days, start_date, sort_order) VALUES (?,?,?,?,?,?,?)');
+$stmt = $pdo->prepare('INSERT INTO wardstock_medications (name, dosage, med_type, cadence, frequency_days, start_date, sort_order) VALUES (?,?,?,?,?,?,?)');
 foreach ($demoMeds as $i => $m) {
     $stmt->execute([$m['name'], $m['dosage'], $m['med_type'], $m['cadence'], $m['frequency_days'], $startDate->format('Y-m-d'), $i + 1]);
     $newId = (int)$pdo->lastInsertId();
@@ -82,11 +82,11 @@ foreach ($demoMeds as $i => $m) {
 echo "Inserted " . count($demoMeds) . " demo medications.\n";
 
 // One fictional dosage change, for the medication_dosage_history feature.
-$pdo->prepare('INSERT INTO medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?,?,?,?,?)')
+$pdo->prepare('INSERT INTO wardstock_medication_dosage_history (medication_id, old_dosage, new_dosage, changed_at, notes) VALUES (?,?,?,?,?)')
     ->execute([$medIds['Lisinopril'], '5mg', '10mg', (clone $startDate)->modify('+30 days')->format('Y-m-d'), 'Dose increased at follow-up (demo data).']);
 
 // --- Daily logs: one row per day for the whole window ---------------------
-$stmt = $pdo->prepare('INSERT INTO daily_logs
+$stmt = $pdo->prepare('INSERT INTO wardstock_daily_logs
     (log_date, sleep_duration_hrs, sleep_efficiency, resting_hr, hrv, weight, steps, exercise_minutes,
      caffeine, caffeine_servings, alcohol, alcohol_drinks, medications_all_taken, medications_taken_json,
      mood_rating, state_of_mind, free_notes)
@@ -123,7 +123,7 @@ for ($d = 0; $d <= $daysBack; $d++) {
 echo "Inserted daily logs for " . ($daysBack + 1) . " days.\n";
 
 // --- Blood pressure readings: a few times a week -----------------------
-$stmt = $pdo->prepare('INSERT INTO blood_pressure_readings (reading_at, systolic, diastolic, pulse, position, source) VALUES (?,?,?,?,?,?)');
+$stmt = $pdo->prepare('INSERT INTO wardstock_blood_pressure_readings (reading_at, systolic, diastolic, pulse, position, source) VALUES (?,?,?,?,?,?)');
 $bpCount = 0;
 for ($d = 0; $d <= $daysBack; $d++) {
     if (mt_rand(0, 10) > 6) continue; // roughly a few times a week, not daily
@@ -149,7 +149,7 @@ $incidentTemplates = [
     ['category' => 'medical', 'trigger_context' => 'Headache after a poor night of sleep.', 'anxiety_intensity' => 2, 'duration_minutes' => 90, 'headache_sensation' => 'moderate'],
     ['category' => 'anxiety', 'trigger_context' => 'Difficult phone call.', 'anxiety_intensity' => 5, 'duration_minutes' => 20, 'chest_sensation' => 'mild', 'shaking' => 'none'],
 ];
-$stmt = $pdo->prepare('INSERT INTO incidents
+$stmt = $pdo->prepare('INSERT INTO wardstock_incidents
     (category, occurred_at, trigger_context, chest_sensation, arm_sensation, shoulder_sensation, headache_sensation,
      shaking, stomach_sensation, anxiety_intensity, duration_minutes, differed_from_pattern, medical_evaluation,
      medical_evaluation_notes, what_helped_recovery)
@@ -170,7 +170,7 @@ foreach ($incidentTemplates as $t) {
 echo "Inserted " . count($incidentTemplates) . " incidents.\n";
 
 // --- Therapy: a standing weekly schedule + past sessions -----------------
-$pdo->prepare('INSERT INTO therapy_schedules (session_type, start_date, frequency_days, active) VALUES (?,?,?,1)')
+$pdo->prepare('INSERT INTO wardstock_therapy_schedules (session_type, start_date, frequency_days, active) VALUES (?,?,?,1)')
     ->execute(['individual', $startDate->format('Y-m-d'), 7]);
 
 $therapyTemplates = [
@@ -178,7 +178,7 @@ $therapyTemplates = [
     ['summary' => 'Reviewed the week\'s incident log together.', 'insights' => 'Most incidents cluster around a specific weekday.', 'homework' => 'Note energy levels each morning this week.'],
     ['summary' => 'Worked through a breathing exercise for acute anxiety.', 'insights' => 'The exercise reliably shortened incident duration.', 'homework' => 'Practice the exercise daily, not just during incidents.'],
 ];
-$stmt = $pdo->prepare('INSERT INTO therapy_sessions (session_date, session_type, summary, insights, homework, mood_before, mood_after) VALUES (?,?,?,?,?,?,?)');
+$stmt = $pdo->prepare('INSERT INTO wardstock_therapy_sessions (session_date, session_type, summary, insights, homework, mood_before, mood_after) VALUES (?,?,?,?,?,?,?)');
 for ($i = 0; $i < 12; $i++) {
     $dayOffset = $daysBack - ($i * 7) - mt_rand(0, 2);
     if ($dayOffset < 0) break;
@@ -190,14 +190,14 @@ echo "Inserted therapy schedule + sessions.\n";
 
 // --- One proposed (hypothetical correlation) event, so that queue isn't empty
 if (!empty($incidentIds)) {
-    $pdo->prepare('INSERT INTO proposed_events (analysis_key, proposed_at, suggested_occurred_at, suggested_category, description, confidence, status) VALUES (?,?,?,?,?,?,?)')
+    $pdo->prepare('INSERT INTO wardstock_proposed_events (analysis_key, proposed_at, suggested_occurred_at, suggested_category, description, confidence, status) VALUES (?,?,?,?,?,?,?)')
         ->execute(['sleep_vs_anxiety_demo', (new DateTime('-2 days'))->format('Y-m-d H:i:s'), (new DateTime('-2 days 08:00'))->format('Y-m-d H:i:s'), 'anxiety', 'Short sleep the night before appears to precede several anxiety incidents (demo data — illustrative only).', 0.62, 'pending']);
 }
 
 // --- Settings: keep it simple and consistent -------------------------
-$pdo->prepare('INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)')
+$pdo->prepare('INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)')
     ->execute(['preferred_timezone', 'America/New_York']);
-$pdo->prepare('INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)')
+$pdo->prepare('INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)')
     ->execute(['db_version', '3.4']);
 
 echo "\nDone. Demo database now has ~3 months of fictional sample data.\n";
