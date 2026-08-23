@@ -81,7 +81,7 @@ $systemReady = $health['dbConnected'] && $health['schemaOk'] && $health['hasAcco
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="login-body">
-<div class="login-bg" style="background-image: url('icon-512.png');"></div>
+<div class="login-bg" style="background-image: url('login-bg.png');"></div>
 <div class="wrap landing">
   <img class="logo" src="icon-512.png" alt="WardStock" width="140" height="140">
   <h1>WardStock</h1>

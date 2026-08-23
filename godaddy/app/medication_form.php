@@ -90,6 +90,18 @@ $freqVal = $med ? (int)$med['frequency_days'] : ($copyFrom ? (int)$copyFrom['fre
 $startVal = $med ? date('Y-m-d', strtotime($med['start_date'])) : app_today($pdo); // fallback was date('Y-m-d') — server default, not Ward's actual today (Aug 2026 fix)
 $endVal = $med && $med['end_date'] ? date('Y-m-d', strtotime($med['end_date'])) : '';
 
+// Prior dosage eras for this same medication name (Aug 2026, Ward: "show any
+// previous dosages ... under the dosage"). Closed eras only (end_date set) —
+// the row currently being edited/started isn't its own history. Excludes the
+// current record's own id so editing an already-ended row doesn't list itself.
+$priorDosages = [];
+if ($nameVal !== '') {
+    $excludeId = $med ? (int)$med['id'] : ($copyFrom ? (int)$copyFrom['id'] : 0);
+    $stmt = $pdo->prepare('SELECT dosage, start_date, end_date FROM medications WHERE name = ? AND end_date IS NOT NULL AND id != ? ORDER BY start_date DESC');
+    $stmt->execute([$nameVal, $excludeId]);
+    $priorDosages = $stmt->fetchAll();
+}
+
 $active = 'medications';
 ?>
 <!doctype html>
@@ -129,6 +141,16 @@ $active = 'medications';
       <legend>Medication</legend>
       <label>Name <input type="text" name="name" value="<?= htmlspecialchars($nameVal) ?>" required></label>
       <label>Dosage <input type="text" name="dosage" value="<?= $med ? val($med, 'dosage') : '' ?>" placeholder="e.g. 10mg"></label>
+      <?php if ($priorDosages): ?>
+        <div class="hint">
+          <strong>Previous dosage<?= count($priorDosages) > 1 ? 's' : '' ?>:</strong>
+          <ul style="margin:4px 0 0 18px; padding:0;">
+            <?php foreach ($priorDosages as $p): ?>
+              <li><?= htmlspecialchars($p['dosage'] ?: 'unset') ?> — <?= htmlspecialchars(date('M j, Y', strtotime($p['start_date']))) ?> to <?= htmlspecialchars(date('M j, Y', strtotime($p['end_date']))) ?></li>
+            <?php endforeach; ?>
+          </ul>
+        </div>
+      <?php endif; ?>
       <div class="grid3">
         <label>Type
           <select name="med_type" id="med_type">
