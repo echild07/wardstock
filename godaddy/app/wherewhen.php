@@ -95,5 +95,6 @@ $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM therapy_sessions')->fet
 
   <p class="hint" style="margin-top:32px; text-align:center;"><a href="about.php">About WardStock</a> · <a href="debug.php">App / database version</a></p>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

@@ -63,6 +63,23 @@ $prefillType = $_GET['type'] ?? null;
 $dateValue = $session
     ? date('Y-m-d\TH:i', strtotime($session['session_date']))
     : ($prefillDate ? $prefillDate . 'T18:00' : app_now($pdo)->format('Y-m-d\TH:i')); // fallback was date('Y-m-d\TH:i') — server default, not Ward's actual now (Aug 2026 fix)
+
+// Medication changes since the last therapy session before this one — same
+// widget as incident_form.php's "last 7 days" version (shared logic in
+// db.php's medication_change_lines()), but windowed against the previous
+// session instead of a fixed lookback, since "what's changed since we last
+// talked about it" is the actually useful question here (Aug 2026, Ward).
+$contextDateTime = date('Y-m-d H:i:s', strtotime($dateValue));
+$contextDateOnly = date('Y-m-d', strtotime($dateValue));
+$priorStmt = $pdo->prepare('SELECT session_date FROM therapy_sessions WHERE session_date < ?' . ($id ? ' AND id != ?' : '') . ' ORDER BY session_date DESC LIMIT 1');
+$id ? $priorStmt->execute([$contextDateTime, $id]) : $priorStmt->execute([$contextDateTime]);
+$priorSessionDateTime = $priorStmt->fetchColumn();
+// No prior session on file (first-ever session) — show everything up to
+// this date rather than nothing, so a brand-new medication history isn't
+// silently hidden just because there's no earlier session to bound it.
+$medRangeStart = $priorSessionDateTime ? date('Y-m-d', strtotime($priorSessionDateTime)) : '1970-01-01';
+$medChangeLines = medication_change_lines($pdo, $medRangeStart, $contextDateOnly);
+
 $active = 'wherewhen'; // moved under Where When (Fulgrim, PLAN.md §18)
 $subActive = 'therapy';
 ?>
@@ -106,6 +123,18 @@ $subActive = 'therapy';
     </fieldset>
 
     <fieldset>
+      <legend>Medication changes (since last session)</legend>
+      <?php if ($medChangeLines): ?>
+        <ul class="med-change-list">
+          <?php foreach ($medChangeLines as $line): ?><li><?= htmlspecialchars($line) ?></li><?php endforeach; ?>
+        </ul>
+      <?php else: ?>
+        <p class="hint">No medication starts, dosage changes, or stops <?= $priorSessionDateTime ? 'since your last session (' . htmlspecialchars(date('M j', strtotime($priorSessionDateTime))) . ')' : 'on file yet' ?>.</p>
+      <?php endif; ?>
+      <p class="hint">Pulled automatically from <a href="medications.php">Medications</a> — edit there, not here.</p>
+    </fieldset>
+
+    <fieldset>
       <legend>Mood</legend>
       <div class="grid3">
         <label>Mood before (0–10) <input type="number" min="0" max="10" name="mood_before" value="<?= val($session, 'mood_before') ?>"></label>
@@ -133,5 +162,6 @@ $subActive = 'therapy';
     </div>
   </form>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

@@ -12,12 +12,19 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="topbar">
+  <header class="topbar brand-topbar">
+    <a class="brand-logo-link" href="../" title="LeeWard"><img src="leeward-badge.png" alt="LeeWard" width="36" height="36"></a>
     <h1>Terms of Service</h1>
-    <a class="btn-link" href="login.php">← Back</a>
+    <a class="brand-logo-link" href="login.php" title="WardStock"><img src="icon-192.png" alt="WardStock" width="36" height="36"></a>
   </header>
+  <p class="hint"><a class="btn-link" href="login.php">← Back</a></p>
 
   <p class="hint">Last updated: <?= date('F j, Y') ?></p>
+
+  <fieldset>
+    <legend>Scope — this page covers the WardStock application specifically</legend>
+    <p>These terms apply to <strong>WardStock</strong>, one product built and operated by LeeWard. They are not LeeWard's general, company-wide terms — those live at <a href="../terms.php">LeeWard's own Terms of Service</a> and cover the LeeWard portal and its other products (wherewhen, standwhy) as well. Where the two overlap, whichever is more specific to what you're actually doing applies: this page for anything inside the WardStock app itself.</p>
+  </fieldset>
 
   <fieldset>
     <legend>Single authorized user</legend>
@@ -44,5 +51,6 @@
     <p>The owner assumes no liability to any other party for the operation, availability, or content of this application, as it is not intended for use by anyone other than the owner.</p>
   </fieldset>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

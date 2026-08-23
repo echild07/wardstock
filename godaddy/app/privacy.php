@@ -14,10 +14,12 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="topbar">
+  <header class="topbar brand-topbar">
+    <a class="brand-logo-link" href="../" title="LeeWard"><img src="leeward-badge.png" alt="LeeWard" width="36" height="36"></a>
     <h1>Privacy Policy</h1>
-    <a class="btn-link" href="login.php">← Back</a>
+    <a class="brand-logo-link" href="login.php" title="WardStock"><img src="icon-192.png" alt="WardStock" width="36" height="36"></a>
   </header>
+  <p class="hint"><a class="btn-link" href="login.php">← Back</a></p>
 
   <p class="hint">Last updated: <?= date('F j, Y') ?></p>
 
@@ -52,5 +54,6 @@
     <p>This application has a single owner and operator, who can be reached through the means by which this application was shared with you, if applicable.</p>
   </fieldset>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

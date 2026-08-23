@@ -10,17 +10,21 @@ Single-user by design — one shared login (`app_user`), no per-person data sepa
 
 ## Versioning
 
-Every release has a version number, `Major.SQL.Code` (e.g. `2.0.0`), plus a fixed codename ("Lucius" for the whole 2.x line — a new codename only comes with a major version bump; the project was "Sidroh" for the 1.x line, before the Home Assistant piece existed). What each number means:
+Every release has a version number, `Major.Data.Code` (e.g. `4.0.0`), plus a shared company
+codename (**"Drew"** for major 4 — every LeeWard product uses the same major + name; see
+`../../leeward/VERSIONS.md`). What each number means:
 
-- **Major** — bumped only for a genuinely major overhaul. Resets SQL and Code to 0.
-- **SQL** — bumped only when a release actually changes something in `sql/` (a new `alter_*.sql`, or a `schema.sql` change). Resets Code to 0.
-- **Code** — bumped for every release that does *not* touch `sql/`. A SQL-changing release bumps SQL instead of this.
+- **Major** — company-wide. Bumped for a genuine overhaul *or* a new shared release wave. Resets Data and Code to 0 on every product.
+- **Data** — bumped only when persisted storage format changes (`sql/`, SQLite, Influx layout, or another restore contract). Resets Code to 0. Historical name: SQL.
+- **Code** — bumped on every code push that does *not* change storage. A storage-changing release bumps Data instead of this.
 
-**Only the Major.SQL part is tracked in the database** — the `app_settings` table's `db_version` key stores just `"2.0"`, never the full three-part version, since a code-only release has nothing for the database to catch up on. A code-only release changes the app's displayed version number but requires no database action at all.
+**Only the Major.Data part is tracked in the database** — the `app_settings` table's `db_version` key stores just `"4.0"`, never the full three-part version.
+
+**Current declared version: 4.0.0 "Drew"** (see `app/app_version.php`). Historical 1.x "Sidroh" / 2.x "Lucius" / 3.x "Fulgrim" were WardStock-only majors before shared numbering.
 
 **Database upgrades are one file per major version line, not one file per release.** `sql/upgrade_from_<major>.0.0.sql` (e.g. `upgrade_from_2.0.0.sql`) is a living, cumulative script covering every SQL change made anywhere in that major version's line — safe to run regardless of which specific release your database is actually on, including a release that's already fully current (every step checks whether it's already applied before doing anything, so re-running is always a safe no-op for whatever's already there). See "Upgrading an existing install" below.
 
-`debug.php` (linked at the bottom of the Export page) shows the full app version, the Major.SQL "schema revision" that's actually compared, and the database's recorded schema revision — flagging a mismatch only when Major.SQL disagrees. The Code number is expected to differ from whatever's in the database at any given moment; that's normal, not a mismatch.
+`debug.php` (linked at the bottom of the Export page) shows the full app version, the Major.Data "schema revision" that's actually compared, and the database's recorded schema revision — flagging a mismatch only when Major.Data disagrees. The Code number is expected to differ from whatever's in the database at any given moment; that's normal, not a mismatch.
 
 ## Zip layout (this piece)
 
@@ -62,8 +66,9 @@ All additive only, never touching existing incidents/daily logs/medications. The
 | `weight_trend.php` | 60-day weight trend chart (SVG, no external dependency) |
 | `weight_deviation.php` | Weight bar chart, deviation from the selected range's own average (7/30/90 days, Chart.js) |
 | `status.php` | Lucius project — HA/Node-RED/Analytics status view, fed by the Home Assistant piece's Status Heartbeat flow |
-| `about.php` | App purpose, version, what's tracked, LeeWard/founders, links to Privacy/Terms/Debug. Public, no login — linked from the login screen footer. |
-| `marketing.html` | LeeWard/WardStock flyer, plain static HTML. Public, no login — linked from the login screen footer. |
+| `about.php` | App purpose, version, what's tracked, LeeWard/founders, links to Privacy/Terms/Debug. Public, no login — linked from the login screen footer. Company About for the whole LeeWard site is `aileeward.com/about.php`, not this page. |
+| `marketing.html` | LeeWard/WardStock flyer. Public. Linked from the LeeWard landing **About WardStock** cell and from the login footer. Top right: LeeWard home (`../`). Bottom right: `Copyright 2026 LeeWard` via `partials_footer.php` → `../terms.php`. |
+| `terms.php` | WardStock-specific terms (Oura, single-user, not a medical device). Company-wide terms: `aileeward.com/terms.php`. The copyright line always uses the company file. |
 | `medications.php` / `medication_form.php` | Medication list — start/end dates, dosage history, actual due-date recurrence |
 | `therapy.php` / `therapy_form.php` | Session log + since-last-session report |
 | `therapy_schedules.php` / `therapy_schedule_form.php` | Recurring therapy plan (drives dashboard reminders) |

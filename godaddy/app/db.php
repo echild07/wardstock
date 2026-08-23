@@ -63,6 +63,58 @@ function app_today($pdo) {
     return app_now($pdo)->format('Y-m-d');
 }
 
+// Human-readable medication changes (started / ended / dosage changed) whose
+// start_date or end_date falls within [$rangeStart, $rangeEnd] (inclusive).
+// Shared by incident_form.php ("Medication changes, last 7 days") and
+// therapy_form.php ("Medication changes, since last session") — same
+// underlying question, "what changed in this window," just different
+// windows (Aug 2026).
+//
+// A "dosage change" is two adjacent eras of the SAME medication where the
+// old one's end_date is exactly the day before the new one's start_date —
+// the pattern medication_form.php's "Start a new dosage" flow always
+// produces. Reporting those as an unrelated "Started X" + "Ended X" pair
+// reads as if the medication was discontinued, which is misleading (Ward,
+// Aug 2026, first found in the incident form: "we didn't end Duloxetine,
+// we changed the dosage"). Detected by direct lookup per row rather than by
+// pairing up rows already fetched for the window, so it's correct even
+// right at the window's edge (e.g. the old row's end_date is in range but
+// the new row's start_date — exactly one day later — has just rolled past
+// $rangeEnd).
+function medication_change_lines($pdo, $rangeStart, $rangeEnd) {
+    $stmt = $pdo->prepare('SELECT * FROM medications
+        WHERE (start_date BETWEEN ? AND ?) OR (end_date BETWEEN ? AND ?)
+        ORDER BY COALESCE(end_date, start_date) DESC');
+    $stmt->execute([$rangeStart, $rangeEnd, $rangeStart, $rangeEnd]);
+    $medChanges = $stmt->fetchAll();
+
+    $lines = [];
+    foreach ($medChanges as $m) {
+        if ($m['start_date'] >= $rangeStart && $m['start_date'] <= $rangeEnd) {
+            $prevStmt = $pdo->prepare('SELECT dosage FROM medications WHERE name = ? AND end_date = DATE_SUB(?, INTERVAL 1 DAY)');
+            $prevStmt->execute([$m['name'], $m['start_date']]);
+            $prevDosage = $prevStmt->fetchColumn();
+            if ($prevDosage !== false) {
+                $lines[] = 'Dosage changed: ' . $m['name'] . ' ' . ($prevDosage ?: 'unset') . ' → ' . ($m['dosage'] ?: 'unset') . ' on ' . date('M j', strtotime($m['start_date']));
+            } else {
+                $lines[] = 'Started ' . $m['name'] . ($m['dosage'] ? ' (' . $m['dosage'] . ')' : '') . ' on ' . date('M j', strtotime($m['start_date']));
+            }
+        }
+        if ($m['end_date'] && $m['end_date'] >= $rangeStart && $m['end_date'] <= $rangeEnd) {
+            $nextStmt = $pdo->prepare('SELECT id FROM medications WHERE name = ? AND start_date = DATE_ADD(?, INTERVAL 1 DAY)');
+            $nextStmt->execute([$m['name'], $m['end_date']]);
+            if (!$nextStmt->fetchColumn()) {
+                // Only a genuine discontinuation gets an "Ended" line — if a
+                // successor era starts the very next day, that pairing is
+                // already reported once above as "Dosage changed," from the
+                // successor row's own start_date branch.
+                $lines[] = 'Ended ' . $m['name'] . ' on ' . date('M j', strtotime($m['end_date']));
+            }
+        }
+    }
+    return $lines;
+}
+
 // Is a scheduled medication actually due on a given date? Checks both that
 // the prescription is currently active (start/end date) AND that this
 // specific day lines up with its recurrence (daily/weekly/biweekly/etc via

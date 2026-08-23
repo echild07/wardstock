@@ -194,6 +194,7 @@ $active = 'medications';
     </p>
   <?php endif; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 <script>
   document.querySelectorAll('.freq-pick').forEach(function (a) {
     a.addEventListener('click', function (e) {

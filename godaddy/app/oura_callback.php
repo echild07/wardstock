@@ -49,5 +49,6 @@ if (isset($_GET['error'])) {
     <p><a class="btn" href="oura_sync.php">Pull data now</a></p>
   <?php endif; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

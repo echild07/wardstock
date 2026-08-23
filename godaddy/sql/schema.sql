@@ -149,8 +149,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
 -- preferred_timezone addition, Aug 2026 — this baseline had already
 -- gained the 3.1 tables above without the stamp being updated to match;
 -- fixed here.)
-INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '3.5')
-ON DUPLICATE KEY UPDATE setting_value = '3.5';
+INSERT INTO app_settings (setting_key, setting_value) VALUES ('db_version', '4.0')
+ON DUPLICATE KEY UPDATE setting_value = '4.0';
 
 -- Preferred timezone (Ward, Aug 2026) — see settings.php / upgrade_from_3.0.0.sql's
 -- own comment on this same key for why it exists.

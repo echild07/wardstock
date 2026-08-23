@@ -339,6 +339,7 @@ $active = 'daily';
     </div>
   </form>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 <script>
   var allTakenBox = document.getElementById('all_taken');
   if (allTakenBox) {

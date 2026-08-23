@@ -80,5 +80,6 @@ $current = get_setting($pdo, 'preferred_timezone') ?: $DEFAULT_TZ;
     </div>
   </form>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

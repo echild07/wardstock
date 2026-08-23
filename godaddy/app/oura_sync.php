@@ -222,5 +222,6 @@ foreach (['oura_push', 'pull_manual_data', 'status', 'weight_push', 'status_push
     <p class="hint" style="margin-top:20px;"><a href="oura_connect.php">Reconnect / switch Oura account</a> · <a href="oura_test.php">Connection test</a></p>
   <?php endif; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

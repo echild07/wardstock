@@ -25,14 +25,12 @@ $dbVersion = get_setting($pdo, 'db_version');
 </head>
 <body>
 <div class="wrap">
-  <header class="topbar">
-    <div class="brand">
-      <img src="icon-192.png" alt="" width="36" height="36" class="brand-mark">
-      <h1>About WardStock</h1>
-    </div>
-    <a class="btn-link" href="../">LeeWard home</a>
-    <a class="btn-link" href="<?= $isLoggedIn ? 'index.php' : 'login.php' ?>">← Back to <?= $isLoggedIn ? 'dashboard' : 'login' ?></a>
+  <header class="topbar brand-topbar">
+    <a class="brand-logo-link" href="../" title="LeeWard"><img src="leeward-badge.png" alt="LeeWard" width="36" height="36"></a>
+    <h1>About WardStock</h1>
+    <a class="brand-logo-link" href="<?= $isLoggedIn ? 'index.php' : 'login.php' ?>" title="WardStock"><img src="icon-192.png" alt="WardStock" width="36" height="36"></a>
   </header>
+  <p class="hint"><a class="btn-link" href="../">LeeWard home</a> · <a class="btn-link" href="<?= $isLoggedIn ? 'index.php' : 'login.php' ?>">← Back to <?= $isLoggedIn ? 'dashboard' : 'login' ?></a></p>
   <?php if ($isLoggedIn): ?>
     <?php include __DIR__ . '/partials_nav.php'; ?>
   <?php endif; ?>
@@ -116,5 +114,6 @@ $dbVersion = get_setting($pdo, 'db_version');
     <p class="hint">Claude Sonnet 5 (Anthropic) did the actual writing here — schema, PHP, the Node-RED flows, and the debugging that came with all three. Whatever's solid about this app came out of that; whatever's still rough is probably just a corner we hadn't gotten to yet.</p>
   </fieldset>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

@@ -83,5 +83,6 @@ $active = 'ecg';
   </div>
   <?php endif; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

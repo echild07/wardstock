@@ -126,5 +126,6 @@ $subActive = 'export';
   <p class="hint">Downloading marks this moment as the new "last export" point, so your next "since last export" pull starts from here.</p>
   <p class="hint">Need to restore data — after a database reset, or catching up a fresh install — from a previous export? <a href="import.php">Import →</a></p>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

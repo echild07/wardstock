@@ -309,5 +309,6 @@ $haSyncHistory = $pdo->query('SELECT * FROM ha_sync_log ORDER BY called_at DESC 
     </table>
   <?php endif; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

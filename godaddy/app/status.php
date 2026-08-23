@@ -132,6 +132,7 @@ function fmt_component($c) {
   <p class="hint" style="margin-top:24px;">A <em>failed</em> run and a <em>missing/overdue</em> run are shown differently on purpose (PLAN.md §15) — a failure means it ran and something went wrong; overdue means it hasn't run when it should have, which is itself a distinct signal (a hung flow, HA being down, etc.).</p>
   <p class="hint">Per-endpoint call history: <a href="oura_test.php">Connection test</a>. Per-flow detail: <a href="oura_sync.php">HA Sync Status</a>.</p>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 <script>
 // Converts every last_run_at timestamp to the browser's own local
 // timezone (Ward, Aug 2026 — same reasoning as analysis.php's charts:

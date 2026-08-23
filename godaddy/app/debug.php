@@ -62,5 +62,6 @@ $inSync = ($dbVersion === APP_VERSION_SCHEMA);
     </tbody>
   </table>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

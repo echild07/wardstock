@@ -354,5 +354,6 @@ $active = 'ecg';
     </div>
   </form>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

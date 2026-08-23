@@ -241,6 +241,7 @@ $groupLabels = ['headline' => 'Headline — the core function of this page', 'au
     </div>
   <?php endforeach; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 <script>
 // Builds the bedtime/wake-time trend and sleep-stage hypnogram charts
 // client-side, from raw UTC timestamps the server sends as-is (see

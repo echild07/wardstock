@@ -342,5 +342,6 @@ function som_pill($value, $href, $somLabels, $icon) {
   </div>
   <?php endif; ?>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>

@@ -151,5 +151,6 @@ $systemReady = $health['dbConnected'] && $health['schemaOk'] && $health['hasAcco
     <p style="margin-top:8px;"><?= $systemReady ? '<span class="notice notice-success">✅ System ready.</span>' : '<span class="error">⚠️ Not fully set up yet — see above.</span>' ?></p>
   </div>
 </div>
+<?php include __DIR__ . '/partials_footer.php'; ?>
 </body>
 </html>
