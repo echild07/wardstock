@@ -2,7 +2,7 @@
 
 Concrete facts needed to rebuild this project as of its current version.
 Deliberately no history or reasoning — see `RETROSPECTIVE.md` for how it
-got here, and `godaddy/PROJECT_PLAN.md` / `homeassistant/PLAN.md` for the
+got here, and `hosted/PROJECT_PLAN.md` / `HA/PLAN.md` for the
 decision log behind any specific design choice. This file states what
 exists now, not why.
 
@@ -18,7 +18,7 @@ Two independent pieces, one project:
    PHP + MySQL web app on GoDaddy shared hosting. No framework, no
    Composer, vanilla PHP/CSS/JS, PDO for MySQL. Always-reachable system of
    record for hand-entered health data.
-2. **`homeassistant/`** — a Node-RED + InfluxDB background sync/analytics
+2. **`HA/`** — a Node-RED + InfluxDB background sync/analytics
    engine on Home Assistant OS. Talks outbound only (to Oura's API, to
    WardStock's API) — never needs to be reachable from outside.
 
@@ -111,12 +111,12 @@ Two independent mechanisms in `auth.php`:
 
 ## Home Assistant piece — file map
 
-| Path (relative to `homeassistant/`) | Contents |
+| Path (relative to `HA/`) | Contents |
 |---|---|
 | `README.md` | Setup steps |
 | `PLAN.md` | Full design doc, all 16 sections |
 | `INFLUXDB_V2_SETUP.md` | Confirmed-working InfluxDB v2 add-on setup — catalog repo, org/bucket wizard, scoped API token, add-on config YAML |
-| `lucius_secrets.json.example` | Template for `/share/lucius_secrets.json` on the HA box |
+| `wardstock_secrets.json.example` | Template for `/share/wardstock_secrets.json` on the HA box |
 | `ha_config/helpers.yaml` | HA helper entities (`input_datetime`/`input_boolean`/`input_text`) the flows read/write |
 | `ha_config/dashboard.yaml` | Lovelace card for the same entities |
 | `nodered/oura_sync_flow.json` | Every 4h, anchored 10am. Oura pull → InfluxDB → GoDaddy `oura_push.php` |
@@ -129,7 +129,7 @@ Two independent mechanisms in `auth.php`:
 
 ## Home Assistant piece — secrets
 
-`/share/lucius_secrets.json` (never `/config` — inside the Node-RED
+`/share/wardstock_secrets.json` (never `/config` — inside the Node-RED
 add-on's own container that's a different, unrelated directory from HA's
 real config; use `/share`). Fields: `godaddy_base_url`,
 `godaddy_api_sync_token`, `oura_client_id`/`_secret`, `oura_access_token`/
@@ -138,7 +138,7 @@ Does **not** include `oura_client_id`/`oura_client_secret` — GoDaddy's
 `config.php` is the source of truth for those, fetched live via
 `api/get_shared_config.php` each Oura Sync run.
 
-Deliberately a **separate** file from `godaddy/config/config.php`, not a
+Deliberately a **separate** file from `hosted/config/config.php`, not a
 shared config — different trust domains. `API_SYNC_TOKEN` is the one
 value still manually copied between the two (unavoidable — it's the
 bootstrap credential that authenticates fetching everything else).
@@ -156,7 +156,7 @@ Per scheduled flow (`oura`, `godaddy`, `bodycomp` prefixes): `input_datetime.luc
 
 ---
 
-## Cross-piece API surface (all in `godaddy/app/api/`, token-authenticated)
+## Cross-piece API surface (all in `hosted/web/api/`, token-authenticated)
 
 | Endpoint | Called by | Purpose |
 |---|---|---|

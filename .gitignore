@@ -1,6 +1,6 @@
 # Real credentials — never commit. Templates/examples stay tracked.
-godaddy/config/config.php
-homeassistant/lucius_secrets.json
+hosted/config/config.php
+HA/share/wardstock_secrets.json
 
 # OS / editor cruft
 .DS_Store

@@ -1,0 +1,598 @@
+[
+    {
+        "id": "tab_oura_backfill",
+        "type": "tab",
+        "label": "WardStock - Oura Backfill",
+        "disabled": false,
+        "info": "Manual, on-demand flow (not scheduled) to backfill full-fidelity historical Oura data straight into InfluxDB, bypassing GoDaddy's curated summary entirely -- a manual pull through GoDaddy only captures sleep_duration_hrs/sleep_efficiency/resting_hr/hrv/steps (a small curated subset). This flow archives everything oura_sync_flow.json's InfluxDB half already logs for live data -- every scalar field per record, plus decomposed 5-minute heart_rate/hrv time series -- for a whole historical range instead of just 'today'.\n\nHOW TO USE: open the 'Manual trigger' inject node, edit its JSON payload to the range you want -- {\"start_date\":\"YYYY-MM-DD\",\"end_date\":\"YYYY-MM-DD\"} -- then click it (the button on the node, or Deploy then click). Re-edit and re-click for a different range; nothing about this flow remembers a previous range.\n\nANSWERING THE 'does it know where the data is' QUESTION: no discovery step exists or is needed -- you just pick a range as wide as you want (even back before you started wearing the ring), and Oura's API simply returns whatever real records actually exist inside it; periods with nothing recorded just come back empty, not as an error. An overly wide range costs a few empty pages, nothing worse.\n\nPAGINATION: unlike the live sync flow's narrow 3-day window (which only ever needed one page), a real historical range can span many pages of Oura's cursor-based next_token pagination. This flow loops each of the three endpoints (sleep, daily_activity, daily_readiness) in turn until next_token stops appearing, with a 500-page safety cap per endpoint (warns and stops cleanly with whatever was collected so far if that cap is ever actually hit, rather than looping forever).\n\nWRITES TO INFLUXDB IN CHUNKS (500 lines per POST, brief pause between chunks) rather than one giant request -- a multi-year backfill with decomposed heart_rate/hrv series can produce tens of thousands of lines, and one request that size risks hitting a body-size limit somewhere in the chain for no real benefit over a few hundred smaller ones. The debug panel shows a running 'writing chunk N/M' message per chunk plus a final summary line, so a long backfill still gives visible progress.\n\nDoes NOT push anything to GoDaddy or touch HA helper entities -- this is purely a raw-data archival tool for InfluxDB. Does still log a start/finish point to InfluxDB's sync_job_runs measurement (job_name=oura_backfill), same convention as the other flows, so a run is visible/confirmable there too.\n\nUNTESTED, same caveat as every other flow in this project -- built from oura_sync_flow.json's proven-live logic (as of Aug 2026, after its Aug 2026 fixes: the missing InfluxDB start-point prep node, the NaN-unsafe token-expiry check, and the api-call-service schema change) but never run end-to-end itself yet. No separate companion test flow for this one specifically -- it's already a manual, on-demand diagnostic tool in its own right, same reasoning as why system_test_flow.json doesn't have one either (PLAN.md §2)."
+    },
+    {
+        "id": "n_bf_trigger",
+        "type": "inject",
+        "z": "tab_oura_backfill",
+        "name": "Manual trigger — EDIT payload before clicking",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "{\"start_date\": \"2023-01-01\", \"end_date\": \"2026-08-19\"}",
+        "payloadType": "json",
+        "x": 190,
+        "y": 60,
+        "wires": [
+            [
+                "n_bf_capture_range"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_capture_range",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Capture date range from trigger",
+        "func": "// Preserve the manual trigger's date-range payload before the next node\n// (file in) overwrites msg.payload with the secrets file's contents.\nlet range;\ntry {\n    range = (typeof msg.payload === 'string') ? JSON.parse(msg.payload) : msg.payload;\n} catch (e) {\n    node.error('Trigger payload is not valid JSON: ' + e.message, msg);\n    return null;\n}\nif (!range || !range.start_date || !range.end_date) {\n    node.error('Trigger payload must be {\"start_date\":\"YYYY-MM-DD\",\"end_date\":\"YYYY-MM-DD\"} - edit the inject node\\'s payload before clicking.', msg);\n    return null;\n}\nmsg.backfill_range = range;\nreturn msg;",
+        "outputs": 1,
+        "x": 470,
+        "y": 60,
+        "wires": [
+            [
+                "n_bf_read_secrets_file"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_read_secrets_file",
+        "type": "file in",
+        "z": "tab_oura_backfill",
+        "name": "Read /share/wardstock_secrets.json",
+        "filename": "/share/wardstock_secrets.json",
+        "filenameType": "str",
+        "format": "utf8",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "none",
+        "allProps": false,
+        "x": 470,
+        "y": 120,
+        "wires": [
+            [
+                "n_bf_load_secrets"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_load_secrets",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Load secrets + start job log",
+        "func": "// msg.payload is the raw file text, read by the preceding \"file in\" core\n// node -- no require('fs'). Same reasoning as oura_sync_flow.json's\n// equivalent node.\nlet secrets;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    node.error('Could not parse secrets file: ' + e.message, msg);\n    return null;\n}\nmsg.secrets = secrets;\nmsg.job_started_at = new Date().toISOString();\nmsg.job_name = 'oura_backfill';\nmsg.influx_start_point = 'sync_job_runs,job_name=oura_backfill,status=started,range=\"' +\n    msg.backfill_range.start_date + '_to_' + msg.backfill_range.end_date + '\" value=1 ' + (Date.now() * 1000000);\nreturn msg;",
+        "outputs": 1,
+        "x": 470,
+        "y": 180,
+        "wires": [
+            [
+                "n_bf_fetch_shared_config_prep"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_fetch_shared_config_prep",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Prepare get_shared_config.php request",
+        "func": "// Same reasoning as oura_sync_flow.json's equivalent node -- GoDaddy is\n// the source of truth for oura_client_id/oura_client_secret (PLAN.md §3),\n// needed here too in case a token refresh is required below.\nmsg.url = msg.secrets.godaddy_base_url + '/api/get_shared_config.php';\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.godaddy_api_sync_token };\nreturn msg;",
+        "outputs": 1,
+        "x": 480,
+        "y": 240,
+        "wires": [
+            [
+                "n_bf_fetch_shared_config_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_fetch_shared_config_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "GoDaddy: GET get_shared_config.php",
+        "method": "use",
+        "ret": "obj",
+        "url": "",
+        "x": 490,
+        "y": 300,
+        "wires": [
+            [
+                "n_bf_merge_shared_config"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_merge_shared_config",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Merge fetched values into msg.secrets",
+        "func": "// Same fallback behavior as oura_sync_flow.json's equivalent node.\nconst resp = msg.payload;\nif (resp && resp.oura_client_id && resp.oura_client_secret) {\n    msg.secrets.oura_client_id = resp.oura_client_id;\n    msg.secrets.oura_client_secret = resp.oura_client_secret;\n} else {\n    node.warn('get_shared_config.php did not return usable values - falling back to local secrets file (if any). Response: ' + JSON.stringify(resp));\n}\nreturn msg;",
+        "outputs": 1,
+        "x": 490,
+        "y": 360,
+        "wires": [
+            [
+                "n_bf_prep_start_point_write"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_prep_start_point_write",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Prepare InfluxDB start-point write",
+        "func": "// Same fix as oura_sync_flow.json's equivalent node: the GoDaddy\n// shared-config fetch just before this consumes msg.url for its own GET\n// call, so it has to be rebuilt here rather than assumed still set.\nmsg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_start_point;\nreturn msg;",
+        "outputs": 1,
+        "x": 490,
+        "y": 420,
+        "wires": [
+            [
+                "n_bf_write_start_point"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_write_start_point",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "InfluxDB: write start point",
+        "method": "use",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "headers": [],
+        "x": 490,
+        "y": 480,
+        "wires": [
+            [
+                "n_bf_check_token"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_check_token",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Check token expiry",
+        "func": "// Same fixed logic as oura_sync_flow.json's equivalent node (Aug 2026 fix:\n// an unparseable/placeholder expires_at must count as needing refresh, not\n// silently pass as 'still valid' -- see that flow's comment for the full story).\nconst secrets = msg.secrets;\nconst expiresAt = new Date(secrets.oura_expires_at || 0).getTime();\nconst needsRefresh = !Number.isFinite(expiresAt) || (expiresAt <= Date.now() + 60000);\nmsg.needs_refresh = needsRefresh;\nif (needsRefresh) {\n    msg.url = 'https://api.ouraring.com/oauth/token';\n    msg.method = 'POST';\n    msg.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };\n    const params = new URLSearchParams({\n        grant_type: 'refresh_token',\n        refresh_token: secrets.oura_refresh_token,\n        client_id: secrets.oura_client_id,\n        client_secret: secrets.oura_client_secret\n    });\n    msg.payload = params.toString();\n}\nreturn msg;",
+        "outputs": 1,
+        "x": 470,
+        "y": 540,
+        "wires": [
+            [
+                "n_bf_route_refresh"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_route_refresh",
+        "type": "switch",
+        "z": "tab_oura_backfill",
+        "name": "Needs refresh?",
+        "property": "needs_refresh",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "true"
+            },
+            {
+                "t": "false"
+            }
+        ],
+        "checkall": "true",
+        "outputs": 2,
+        "x": 690,
+        "y": 540,
+        "wires": [
+            [
+                "n_bf_refresh_call"
+            ],
+            [
+                "n_bf_sleep_init"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_refresh_call",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "Oura: refresh token",
+        "method": "use",
+        "ret": "obj",
+        "url": "",
+        "x": 430,
+        "y": 600,
+        "wires": [
+            [
+                "n_bf_save_refreshed_token"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_save_refreshed_token",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Save refreshed token to secrets file",
+        "func": "// Same logic as oura_sync_flow.json's equivalent node. Oura ROTATES the\n// refresh token on every use, so the NEW refresh_token must be saved every\n// time; reusing the old one fails on the next run.\nif (!msg.payload || !msg.payload.access_token) {\n    msg.job_failed = true;\n    msg.failure_code = 'oura_auth_failed';\n    msg.failure_detail = 'token refresh did not return access_token: ' + JSON.stringify(msg.payload);\n    return [null, msg];\n}\nconst secrets = msg.secrets;\nsecrets.oura_access_token = msg.payload.access_token;\nsecrets.oura_refresh_token = msg.payload.refresh_token;\nsecrets.oura_expires_at = new Date(Date.now() + (msg.payload.expires_in * 1000)).toISOString();\nmsg.secrets = secrets;\nmsg.filename = '/share/wardstock_secrets.json';\nmsg.payload = JSON.stringify(secrets, null, 2);\nreturn [msg, null];",
+        "outputs": 2,
+        "x": 430,
+        "y": 660,
+        "wires": [
+            [
+                "n_bf_write_secrets_file"
+            ],
+            [
+                "n_bf_job_failed"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_write_secrets_file",
+        "type": "file",
+        "z": "tab_oura_backfill",
+        "name": "Write refreshed tokens to secrets file",
+        "filename": "/share/wardstock_secrets.json",
+        "filenameType": "str",
+        "appendNewline": false,
+        "createDir": false,
+        "overwriteFile": "true",
+        "encoding": "none",
+        "x": 430,
+        "y": 720,
+        "wires": [
+            [
+                "n_bf_sleep_init"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_job_failed",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Log failure",
+        "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_backfill,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nnode.warn('Oura backfill failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
+        "outputs": 1,
+        "x": 680,
+        "y": 660,
+        "wires": [
+            [
+                "n_bf_prep_failed_finish_write"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_prep_failed_finish_write",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Prepare finish-point write (failed)",
+        "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
+        "outputs": 1,
+        "x": 690,
+        "y": 720,
+        "wires": [
+            [
+                "n_bf_write_failed_finish_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_write_failed_finish_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "InfluxDB: write finish point (failed)",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 690,
+        "y": 780,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "n_bf_sleep_init",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Init /sleep pagination",
+        "func": "// First page for /sleep across the whole requested range. Oura returns\n// whatever data actually exists within [start_date, end_date] -- no need\n// to know in advance where real data starts; an overly wide range just\n// comes back with fewer/no records for periods with nothing recorded.\nmsg.sleep_data = [];\nmsg.sleep_page_count = 0;\nconst params = { start_date: msg.backfill_range.start_date, end_date: msg.backfill_range.end_date };\nmsg.url = 'https://api.ouraring.com/v2/usercollection/sleep?' + new URLSearchParams(params).toString();\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.oura_access_token };\nreturn msg;",
+        "outputs": 1,
+        "x": 950,
+        "y": 540,
+        "wires": [
+            [
+                "n_bf_sleep_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_sleep_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "Oura: GET /sleep (one page)",
+        "method": "use",
+        "ret": "obj",
+        "url": "",
+        "x": 950,
+        "y": 600,
+        "wires": [
+            [
+                "n_bf_sleep_page"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_sleep_page",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Accumulate page, loop or continue",
+        "func": "// Accumulates one page and loops back for the next if Oura says there is\n// one (next_token) -- a wide backfill range can span many pages, unlike\n// the regular sync flow's narrow 3-day window which never needed this.\nconst body = msg.payload;\nmsg.sleep_page_count = (msg.sleep_page_count || 0) + 1;\nif (!body || !Array.isArray(body.data)) {\n    node.warn('Oura /sleep returned something unexpected on page ' + msg.sleep_page_count + ' - stopping pagination for this endpoint and continuing with what was collected. Response: ' + JSON.stringify(body));\n    msg.sleep_response = { data: msg.sleep_data };\n    return [null, msg];\n}\nmsg.sleep_data = msg.sleep_data.concat(body.data);\nif (body.next_token && msg.sleep_page_count < 500) {\n    const params = { start_date: msg.backfill_range.start_date, end_date: msg.backfill_range.end_date, next_token: body.next_token };\n    msg.url = 'https://api.ouraring.com/v2/usercollection/sleep?' + new URLSearchParams(params).toString();\n    msg.method = 'GET';\n    msg.headers = { 'Authorization': 'Bearer ' + msg.secrets.oura_access_token };\n    return [msg, null];\n}\nif (body.next_token) {\n    node.warn('Oura /sleep hit the 500-page safety cap with more data still available - collected ' + msg.sleep_data.length + ' records so far. Re-run with a narrower date range to get the rest.');\n}\nmsg.sleep_response = { data: msg.sleep_data };\nreturn [null, msg];",
+        "outputs": 2,
+        "x": 950,
+        "y": 660,
+        "wires": [
+            [
+                "n_bf_sleep_http"
+            ],
+            [
+                "n_bf_activity_init"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_activity_init",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Init /daily_activity pagination",
+        "func": "msg.activity_data = [];\nmsg.activity_page_count = 0;\nconst params = { start_date: msg.backfill_range.start_date, end_date: msg.backfill_range.end_date };\nmsg.url = 'https://api.ouraring.com/v2/usercollection/daily_activity?' + new URLSearchParams(params).toString();\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.oura_access_token };\nreturn msg;",
+        "outputs": 1,
+        "x": 970,
+        "y": 720,
+        "wires": [
+            [
+                "n_bf_activity_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_activity_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "Oura: GET /daily_activity (one page)",
+        "method": "use",
+        "ret": "obj",
+        "url": "",
+        "x": 980,
+        "y": 780,
+        "wires": [
+            [
+                "n_bf_activity_page"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_activity_page",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Accumulate page, loop or continue",
+        "func": "const body = msg.payload;\nmsg.activity_page_count = (msg.activity_page_count || 0) + 1;\nif (!body || !Array.isArray(body.data)) {\n    node.warn('Oura /daily_activity returned something unexpected on page ' + msg.activity_page_count + ' - stopping pagination for this endpoint and continuing with what was collected. Response: ' + JSON.stringify(body));\n    msg.activity_response = { data: msg.activity_data };\n    return [null, msg];\n}\nmsg.activity_data = msg.activity_data.concat(body.data);\nif (body.next_token && msg.activity_page_count < 500) {\n    const params = { start_date: msg.backfill_range.start_date, end_date: msg.backfill_range.end_date, next_token: body.next_token };\n    msg.url = 'https://api.ouraring.com/v2/usercollection/daily_activity?' + new URLSearchParams(params).toString();\n    msg.method = 'GET';\n    msg.headers = { 'Authorization': 'Bearer ' + msg.secrets.oura_access_token };\n    return [msg, null];\n}\nif (body.next_token) {\n    node.warn('Oura /daily_activity hit the 500-page safety cap with more data still available - collected ' + msg.activity_data.length + ' records so far. Re-run with a narrower date range to get the rest.');\n}\nmsg.activity_response = { data: msg.activity_data };\nreturn [null, msg];",
+        "outputs": 2,
+        "x": 990,
+        "y": 840,
+        "wires": [
+            [
+                "n_bf_activity_http"
+            ],
+            [
+                "n_bf_readiness_init"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_readiness_init",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Init /daily_readiness pagination",
+        "func": "msg.readiness_data = [];\nmsg.readiness_page_count = 0;\nconst params = { start_date: msg.backfill_range.start_date, end_date: msg.backfill_range.end_date };\nmsg.url = 'https://api.ouraring.com/v2/usercollection/daily_readiness?' + new URLSearchParams(params).toString();\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.oura_access_token };\nreturn msg;",
+        "outputs": 1,
+        "x": 990,
+        "y": 900,
+        "wires": [
+            [
+                "n_bf_readiness_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_readiness_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "Oura: GET /daily_readiness (one page)",
+        "method": "use",
+        "ret": "obj",
+        "url": "",
+        "x": 1000,
+        "y": 960,
+        "wires": [
+            [
+                "n_bf_readiness_page"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_readiness_page",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Accumulate page, loop or continue",
+        "func": "const body = msg.payload;\nmsg.readiness_page_count = (msg.readiness_page_count || 0) + 1;\nif (!body || !Array.isArray(body.data)) {\n    node.warn('Oura /daily_readiness returned something unexpected on page ' + msg.readiness_page_count + ' - stopping pagination for this endpoint and continuing with what was collected. Response: ' + JSON.stringify(body));\n    msg.readiness_response = { data: msg.readiness_data };\n    return [null, msg];\n}\nmsg.readiness_data = msg.readiness_data.concat(body.data);\nif (body.next_token && msg.readiness_page_count < 500) {\n    const params = { start_date: msg.backfill_range.start_date, end_date: msg.backfill_range.end_date, next_token: body.next_token };\n    msg.url = 'https://api.ouraring.com/v2/usercollection/daily_readiness?' + new URLSearchParams(params).toString();\n    msg.method = 'GET';\n    msg.headers = { 'Authorization': 'Bearer ' + msg.secrets.oura_access_token };\n    return [msg, null];\n}\nif (body.next_token) {\n    node.warn('Oura /daily_readiness hit the 500-page safety cap with more data still available - collected ' + msg.readiness_data.length + ' records so far. Re-run with a narrower date range to get the rest.');\n}\nmsg.readiness_response = { data: msg.readiness_data };\nreturn [null, msg];",
+        "outputs": 2,
+        "x": 1010,
+        "y": 1020,
+        "wires": [
+            [
+                "n_bf_readiness_http"
+            ],
+            [
+                "n_bf_build_lines"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_build_lines",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Build InfluxDB lines (full fidelity, no GoDaddy summary)",
+        "func": "// Builds the same InfluxDB line-protocol schema as oura_sync_flow.json's\n// \"Build InfluxDB lines + GoDaddy summary\" function (kept identical so\n// backfilled and live-synced data share one schema) -- minus the GoDaddy\n// summary half, which doesn't apply here: this flow only ever writes to\n// InfluxDB, never pushes to GoDaddy (see the tab's info note for why).\nconst lines = [];\nconst nowNs = Date.now() * 1000000;\n\nfunction esc(s) { return String(s).replace(/([ ,=])/g, '\\\\$1'); }\n\nfunction sleepRecordToLine(r) {\n    const tags = ['oura_sleep', 'type=' + esc(r.type || 'unknown'), 'day=' + esc(r.day)].join(',');\n    const scalarFields = ['average_breath','average_heart_rate','average_hrv','awake_time',\n        'deep_sleep_duration','efficiency','latency','light_sleep_duration','lowest_heart_rate',\n        'period','rem_sleep_duration','restless_periods','time_in_bed','total_sleep_duration',\n        'readiness_score_delta','sleep_score_delta'];\n    const parts = [];\n    scalarFields.forEach(f => { if (r[f] !== null && r[f] !== undefined) parts.push(f + '=' + r[f]); });\n    parts.push('id=\"' + (r.id || '') + '\"');\n    parts.push('sleep_phase_30_sec=\"' + (r.sleep_phase_30_sec || '') + '\"');\n    parts.push('movement_30_sec=\"' + (r.movement_30_sec || '') + '\"');\n    if (r.bedtime_end) parts.push('bedtime_end=\"' + r.bedtime_end + '\"'); // kept identical to oura_sync_flow.json (Aug 2026 fix)\n    if (r.readiness) {\n        parts.push('embedded_readiness_score=' + r.readiness.score);\n        if (r.readiness.contributors) {\n            Object.entries(r.readiness.contributors).forEach(([k, v]) => {\n                if (v !== null) parts.push('embedded_readiness_' + k + '=' + v);\n            });\n        }\n        if (r.readiness.temperature_deviation !== null) parts.push('temperature_deviation=' + r.readiness.temperature_deviation);\n        if (r.readiness.temperature_trend_deviation !== null) parts.push('temperature_trend_deviation=' + r.readiness.temperature_trend_deviation);\n    }\n    const ts = r.bedtime_start ? new Date(r.bedtime_start).getTime() * 1000000 : nowNs;\n    return tags + ' ' + parts.join(',') + ' ' + ts;\n}\n\nfunction decomposeTimeSeries(measurement, r, key) {\n    if (!r[key] || !r[key].items || !r.bedtime_start) return [];\n    const interval = r[key].interval || 300;\n    const base = new Date(r.bedtime_start).getTime();\n    const out = [];\n    r[key].items.forEach((val, i) => {\n        if (val === null || val === undefined) return;\n        const ts = (base + i * interval * 1000) * 1000000;\n        out.push(measurement + ',sleep_id=' + esc(r.id) + ' value=' + val + ' ' + ts);\n    });\n    return out;\n}\n\n// SLEEP-STAGE HYPNOGRAM DECOMPOSITION (PLAN.md §11 #20, Aug 2026) — kept\n// identical to oura_sync_flow.json's copy of this same function (same\n// reasoning this file's own top comment already gives for duplicating\n// sleepRecordToLine/decomposeTimeSeries — backfilled and live-synced\n// data must share one schema). STAGE_MAP IS ASSUMED, NOT CONFIRMED — see\n// the live flow's copy of this comment for the full explanation; if that\n// gets corrected after a real run, apply the same fix here too.\nconst SLEEP_STAGE_MAP = { '1': 'deep', '2': 'light', '3': 'rem', '4': 'awake' };\nfunction decomposeSleepPhase(r) {\n    if (!r.sleep_phase_30_sec || !r.bedtime_start) return [];\n    const EPOCH_SECONDS = 30;\n    const BUCKET_SECONDS = 900; // 15 minutes, per PLAN.md §11 #20's requested resolution\n    const epochsPerBucket = BUCKET_SECONDS / EPOCH_SECONDS;\n    const base = new Date(r.bedtime_start).getTime();\n    const chars = String(r.sleep_phase_30_sec).split('');\n    const out = [];\n    for (let i = 0; i < chars.length; i += epochsPerBucket) {\n        const bucketChars = chars.slice(i, i + epochsPerBucket);\n        const counts = {};\n        bucketChars.forEach(c => {\n            const stage = SLEEP_STAGE_MAP[c] || 'unknown';\n            counts[stage] = (counts[stage] || 0) + 1;\n        });\n        const majorityStage = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];\n        const ts = (base + i * EPOCH_SECONDS * 1000) * 1000000;\n        out.push('oura_sleep_stage,sleep_id=' + esc(r.id) + ',stage=' + esc(majorityStage) + ' value=1 ' + ts);\n    }\n    return out;\n}\n\nconst sleepRecords = (msg.sleep_response && msg.sleep_response.data) || [];\nsleepRecords.forEach(r => {\n    lines.push(sleepRecordToLine(r));\n    lines.push(...decomposeTimeSeries('oura_heart_rate', r, 'heart_rate'));\n    lines.push(...decomposeTimeSeries('oura_hrv', r, 'hrv'));\n    lines.push(...decomposeSleepPhase(r));\n});\n\nconst activityRecords = (msg.activity_response && msg.activity_response.data) || [];\nactivityRecords.forEach(r => {\n    const parts = [];\n    Object.entries(r).forEach(([k, v]) => {\n        if (typeof v === 'number') parts.push(k + '=' + v);\n        else if (typeof v === 'string' && k !== 'day' && k !== 'class_5_min') parts.push(k + '=\"' + v.replace(/\"/g,'') + '\"');\n    });\n    if (parts.length) lines.push('oura_daily_activity,day=' + esc(r.day) + ' ' + parts.join(',') + ' ' + nowNs);\n});\n\nconst readinessRecords = (msg.readiness_response && msg.readiness_response.data) || [];\nreadinessRecords.forEach(r => {\n    const parts = ['score=' + r.score];\n    if (r.contributors) {\n        Object.entries(r.contributors).forEach(([k, v]) => { if (v !== null) parts.push(k + '=' + v); });\n    }\n    if (parts.length) lines.push('oura_daily_readiness,day=' + esc(r.day) + ' ' + parts.join(',') + ' ' + nowNs);\n});\n\nmsg.influx_lines = lines;\nmsg.backfill_counts = { sleep: sleepRecords.length, activity: activityRecords.length, readiness: readinessRecords.length, total_lines: lines.length };\nreturn msg;",
+        "outputs": 1,
+        "x": 1010,
+        "y": 1080,
+        "wires": [
+            [
+                "n_bf_chunk_init"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_chunk_init",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Split lines into write-sized chunks",
+        "func": "// Chunked rather than one giant POST -- a multi-year backfill with\n// decomposed 5-minute heart_rate/hrv series can easily produce tens of\n// thousands of line-protocol lines; one request that size risks hitting\n// a body-size limit somewhere in the chain (InfluxDB, the add-on, or\n// Node-RED itself) for no benefit over a few hundred smaller ones.\nconst CHUNK_SIZE = 500;\nconst lines = msg.influx_lines || [];\nmsg.chunks = [];\nfor (let i = 0; i < lines.length; i += CHUNK_SIZE) {\n    msg.chunks.push(lines.slice(i, i + CHUNK_SIZE));\n}\nmsg.chunk_index = 0;\nmsg.chunk_total = msg.chunks.length;\nnode.warn('Backfill: ' + (msg.backfill_counts ? msg.backfill_counts.total_lines : lines.length) + ' lines to write in ' + msg.chunk_total + ' chunk(s).');\nreturn msg;",
+        "outputs": 1,
+        "x": 1010,
+        "y": 1140,
+        "wires": [
+            [
+                "n_bf_chunk_next"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_chunk_next",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Next chunk, or done?",
+        "func": "if (msg.chunk_index >= msg.chunks.length) {\n    return [null, msg];\n}\nnode.warn('Backfill: writing chunk ' + (msg.chunk_index + 1) + '/' + msg.chunk_total + ' (' + msg.chunks[msg.chunk_index].length + ' lines)');\nmsg.current_chunk = msg.chunks[msg.chunk_index];\nmsg.chunk_index = msg.chunk_index + 1;\nreturn [msg, null];",
+        "outputs": 2,
+        "x": 800,
+        "y": 1140,
+        "wires": [
+            [
+                "n_bf_chunk_prep_write"
+            ],
+            [
+                "n_bf_finish"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_chunk_prep_write",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Prepare chunk write",
+        "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.current_chunk.join('\\n');\nreturn msg;",
+        "outputs": 1,
+        "x": 590,
+        "y": 1140,
+        "wires": [
+            [
+                "n_bf_chunk_write_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_chunk_write_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "InfluxDB: write chunk",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 590,
+        "y": 1200,
+        "wires": [
+            [
+                "n_bf_chunk_delay"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_chunk_delay",
+        "type": "delay",
+        "z": "tab_oura_backfill",
+        "name": "Brief pause between chunks",
+        "pauseType": "delay",
+        "timeout": "300",
+        "timeoutUnits": "milliseconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "x": 800,
+        "y": 1200,
+        "wires": [
+            [
+                "n_bf_chunk_next"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_finish",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Log success + summarize",
+        "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nconst c = msg.backfill_counts || {};\nmsg.influx_finish_point = 'sync_job_runs,job_name=oura_backfill,status=success,range=\"' +\n    msg.backfill_range.start_date + '_to_' + msg.backfill_range.end_date + '\" ' +\n    'sleep_records=' + (c.sleep||0) + ',activity_records=' + (c.activity||0) +\n    ',readiness_records=' + (c.readiness||0) + ',total_lines=' + (c.total_lines||0) +\n    ',duration_ms=' + durationMs + ' ' + nowNs;\nnode.warn('Backfill complete: ' + (c.sleep||0) + ' sleep, ' + (c.activity||0) + ' activity, ' +\n    (c.readiness||0) + ' readiness records -> ' + (c.total_lines||0) + ' InfluxDB lines written in ' +\n    msg.chunk_total + ' chunk(s), ' + Math.round(durationMs/1000) + 's total.');\nreturn msg;",
+        "outputs": 1,
+        "x": 800,
+        "y": 1080,
+        "wires": [
+            [
+                "n_bf_prep_finish_write"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_prep_finish_write",
+        "type": "function",
+        "z": "tab_oura_backfill",
+        "name": "Prepare finish-point write",
+        "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
+        "outputs": 1,
+        "x": 800,
+        "y": 1020,
+        "wires": [
+            [
+                "n_bf_write_finish_http"
+            ]
+        ]
+    },
+    {
+        "id": "n_bf_write_finish_http",
+        "type": "http request",
+        "z": "tab_oura_backfill",
+        "name": "InfluxDB: write finish point",
+        "method": "use",
+        "ret": "txt",
+        "url": "",
+        "x": 800,
+        "y": 960,
+        "wires": [
+            []
+        ]
+    }
+]

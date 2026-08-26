@@ -1,0 +1,246 @@
+[
+  {
+    "id": "tab_godaddy_restore",
+    "type": "tab",
+    "label": "WardStock - GoDaddy Restore",
+    "disabled": false,
+    "info": "Manual trigger ONLY, deliberately (Ward, Aug 2026 — same 'wipe/migrate scenario, not routine' convention wherewhen_data_restore_flow.json already established for its own InfluxDB-only restore). Reads every row back out of the local disaster-recovery copy (/share/wardstock_godaddy_backup.db, table godaddy_backup — see godaddy_backup_flow.json, which is what keeps that table current) and POSTs the whole thing to the new token-authenticated api/bulk_restore.php, which runs it through the exact same merge-safe import_records() logic the human-facing Import page has always used.\n\nUse this after GoDaddy's MySQL database has been wiped/rebuilt (this project's own active migration work, Aug 2026) to repopulate incidents/Daily Log/Therapy/Medications/dosage-history from HA's local mirror — GoDaddy stays the source of truth for hand-entered data day to day (godaddy_backup_flow.json reads FROM GoDaddy, never the other way, during normal operation); this flow is the one exception, run by hand, specifically to push HA's copy back UP after GoDaddy has nothing of its own left.\n\nDoes NOT touch EKG recordings (out of scope for the backup half too) or anything InfluxDB-only (Oura raw archive, body composition, analysis results — those are wherewhen_data_restore_flow.json's job, a separate flow, separate direction of 'source of truth').\n\nNo separate companion test flow, same reasoning as oura_backfill_flow.json — this manual, on-demand flow already functions as its own diagnostic tool; the debug sidebar shows exactly what got read from SQLite and what api/bulk_restore.php reported back.\n\nUNTESTED — built from established patterns in this project (godaddy_pull_flow.json's secrets/HTTP handling, the SQLite query shape confirmed by sqlite_test_flow.json) but never run end-to-end, and api/bulk_restore.php itself is new this same session. Verify node configs against your actual Node-RED version after import, and consider a dry run against a non-production GoDaddy database first if one is available."
+  },
+  {
+    "id": "n_gr_trigger_manual",
+    "type": "inject",
+    "z": "tab_godaddy_restore",
+    "name": "Manual trigger — RESTORES DATA, run deliberately",
+    "props": [{ "p": "payload" }],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 80,
+    "wires": [["n_gr_read_secrets"]]
+  },
+  {
+    "id": "n_gr_read_secrets",
+    "type": "file in",
+    "z": "tab_godaddy_restore",
+    "name": "Read /share/wardstock_secrets.json",
+    "filename": "/share/wardstock_secrets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 470,
+    "y": 80,
+    "wires": [["n_gr_load_secrets"]]
+  },
+  {
+    "id": "n_gr_load_secrets",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Load secrets + start job log",
+    "func": "let secrets;\ntry {\n    secrets = JSON.parse(msg.payload);\n} catch (e) {\n    node.error('Could not parse secrets file: ' + e.message, msg);\n    return null;\n}\nmsg.secrets = secrets;\nmsg.job_started_at = new Date().toISOString();\nconst nowNs = Date.now() * 1000000;\nmsg.url = secrets.influxdb_url + '/api/v2/write?org=' + secrets.influxdb_org + '&bucket=' + secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = 'sync_job_runs,job_name=godaddy_restore,status=started value=1 ' + nowNs;\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 80,
+    "wires": [["n_gr_write_start_http"]]
+  },
+  {
+    "id": "n_gr_write_start_http",
+    "type": "http request",
+    "z": "tab_godaddy_restore",
+    "name": "InfluxDB: write start point",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 990,
+    "y": 80,
+    "wires": [["n_gr_sqlite_select_prep"]]
+  },
+  {
+    "id": "n_gr_sqlite_select_prep",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "SQLite: prep SELECT all backup rows",
+    "func": "msg.topic = 'SELECT record_type, source_id, data_json FROM godaddy_backup';\nreturn msg;",
+    "outputs": 1,
+    "x": 190,
+    "y": 160,
+    "wires": [["n_gr_sqlite_select_db"]]
+  },
+  {
+    "id": "n_gr_sqlite_select_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_restore",
+    "name": "sqlite: SELECT * FROM godaddy_backup",
+    "mydb": "cfg_wardstock_godaddy_backup_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 470,
+    "y": 160,
+    "wires": [["n_gr_build_records"]]
+  },
+  {
+    "id": "n_gr_build_records",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Reconstruct {records:[...]} from backup rows",
+    "func": "// msg.payload here is the sqlite node's own result shape (array of row\n// objects), confirmed against a real instance by sqlite_test_flow.json —\n// NOT the HTTP-call msg.payload from earlier in this flow (that was\n// already consumed by n_gr_write_start_http and isn't needed again).\nconst rows = Array.isArray(msg.payload) ? msg.payload : [];\nconst records = [];\nlet parseFailures = 0;\nrows.forEach(row => {\n    try {\n        records.push(JSON.parse(row.data_json));\n    } catch (e) {\n        parseFailures++;\n        node.warn('Skipping unparseable backup row (' + row.record_type + '/' + row.source_id + '): ' + e.message);\n    }\n});\nmsg.records = records;\nmsg.record_count = records.length;\nmsg.parse_failures = parseFailures;\n\nif (!records.length) {\n    msg.job_failed = true;\n    msg.failure_code = 'unknown_error';\n    msg.failure_detail = 'godaddy_backup table is empty — nothing to restore. Has godaddy_backup_flow.json run successfully at least once?';\n    return [null, msg];\n}\nreturn [msg, null];",
+    "outputs": 2,
+    "x": 730,
+    "y": 160,
+    "wires": [
+      ["n_gr_prepare_restore_request"],
+      ["n_gr_job_failed"]
+    ]
+  },
+  {
+    "id": "n_gr_prepare_restore_request",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Prepare bulk_restore.php request",
+    "func": "msg.url = msg.secrets.godaddy_base_url + '/api/bulk_restore.php';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Bearer ' + msg.secrets.godaddy_api_sync_token, 'Content-Type': 'application/json' };\nmsg.payload = JSON.stringify({ records: msg.records });\nreturn msg;",
+    "outputs": 1,
+    "x": 990,
+    "y": 160,
+    "wires": [["n_gr_restore_http"]]
+  },
+  {
+    "id": "n_gr_restore_http",
+    "type": "http request",
+    "z": "tab_godaddy_restore",
+    "name": "GoDaddy: POST bulk_restore.php",
+    "method": "use",
+    "ret": "obj",
+    "url": "",
+    "x": 190,
+    "y": 240,
+    "wires": [["n_gr_process_response"]]
+  },
+  {
+    "id": "n_gr_process_response",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Check bulk_restore.php response",
+    "func": "const resp = msg.payload;\nif (!resp || resp.error || resp.success !== true) {\n    msg.job_failed = true;\n    msg.failure_code = (resp && resp.error === 'unauthorized') ? 'godaddy_auth_failed'\n        : (resp && resp.error) ? 'godaddy_error_response' : 'unknown_error';\n    msg.failure_detail = resp ? JSON.stringify(resp).slice(0, 500) : 'empty response';\n    return [null, msg];\n}\nnode.warn('GoDaddy restore complete — records sent: ' + msg.record_count + ', counts: ' + JSON.stringify(resp.counts));\nif (resp.unmatchedMeds && resp.unmatchedMeds.length) {\n    node.warn('Restore: these medication names from the backup did not match anything currently in GoDaddy\\'s Medications list: ' + resp.unmatchedMeds.join(', '));\n}\nmsg.restore_counts = resp.counts;\nreturn [msg, null];",
+    "outputs": 2,
+    "x": 470,
+    "y": 240,
+    "wires": [
+      ["n_gr_job_success"],
+      ["n_gr_job_failed"]
+    ]
+  },
+  {
+    "id": "n_gr_job_success",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Log success",
+    "func": "const nowNs = Date.now() * 1000000;\nconst durationMs = Date.now() - new Date(msg.job_started_at).getTime();\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_restore,status=success record_count=' + (msg.record_count||0) + ',duration_ms=' + durationMs + ' ' + nowNs;\nmsg.sqlite_job = { job_name: 'godaddy_restore', mode: 'success', last_success: new Date().toISOString(), last_attempt: new Date().toISOString(), last_attempt_ok: 1 };\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 240,
+    "wires": [["n_gr_final_influx_write", "n_gr_sqlite_ensure_status_table"]]
+  },
+  {
+    "id": "n_gr_job_failed",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Log failure",
+    "func": "const nowNs = Date.now() * 1000000;\nconst code = msg.failure_code || 'unknown_error';\nconst detail = (msg.failure_detail || '').replace(/([ ,=\"])/g, '\\\\$1');\nmsg.influx_finish_point = 'sync_job_runs,job_name=godaddy_restore,status=failed,failure_code=' + code + ' detail=\"' + detail + '\" ' + nowNs;\nmsg.sqlite_job = { job_name: 'godaddy_restore', mode: 'failure', last_attempt: new Date().toISOString(), last_attempt_ok: 0, last_error: code + ': ' + (msg.failure_detail || '') };\nnode.warn('GoDaddy restore failed: ' + code + ' - ' + msg.failure_detail);\nreturn msg;",
+    "outputs": 1,
+    "x": 990,
+    "y": 300,
+    "wires": [["n_gr_final_influx_write", "n_gr_sqlite_ensure_status_table"]]
+  },
+  {
+    "id": "n_gr_final_influx_write",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "Prepare finish-point write",
+    "func": "msg.url = msg.secrets.influxdb_url + '/api/v2/write?org=' + msg.secrets.influxdb_org + '&bucket=' + msg.secrets.influxdb_bucket + '&precision=ns';\nmsg.method = 'POST';\nmsg.headers = { 'Authorization': 'Token ' + msg.secrets.influxdb_token, 'Content-Type': 'text/plain; charset=utf-8' };\nmsg.payload = msg.influx_finish_point;\nreturn msg;",
+    "outputs": 1,
+    "x": 190,
+    "y": 340,
+    "wires": [["n_gr_final_influx_http"]]
+  },
+  {
+    "id": "n_gr_final_influx_http",
+    "type": "http request",
+    "z": "tab_godaddy_restore",
+    "name": "InfluxDB: write finish point",
+    "method": "use",
+    "ret": "txt",
+    "url": "",
+    "x": 470,
+    "y": 340,
+    "wires": [[]]
+  },
+  {
+    "id": "n_gr_sqlite_ensure_status_table",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "SQLite: ensure job_status table exists",
+    "func": "msg.topic = \"CREATE TABLE IF NOT EXISTS job_status (\" +\n    \"job_name TEXT PRIMARY KEY, last_success TEXT, last_attempt TEXT, \" +\n    \"last_attempt_ok INTEGER, last_error TEXT, checkpoint TEXT, updated_at TEXT)\";\nreturn msg;",
+    "outputs": 1,
+    "x": 730,
+    "y": 340,
+    "wires": [["n_gr_sqlite_ensure_status_table_db"]]
+  },
+  {
+    "id": "n_gr_sqlite_ensure_status_table_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_restore",
+    "name": "sqlite: CREATE TABLE IF NOT EXISTS",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 990,
+    "y": 340,
+    "wires": [["n_gr_sqlite_upsert_prep"]]
+  },
+  {
+    "id": "n_gr_sqlite_upsert_prep",
+    "type": "function",
+    "z": "tab_godaddy_restore",
+    "name": "SQLite: prep status UPSERT",
+    "func": "function esc(s) { return \"'\" + String(s).replace(/'/g, \"''\") + \"'\"; }\nfunction sqlVal(v) { return (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? v : esc(v)); }\nconst j = msg.sqlite_job;\nconst now = new Date().toISOString();\nconst cols = ['job_name', 'last_success', 'last_attempt', 'last_attempt_ok', 'last_error', 'checkpoint', 'updated_at'];\nconst vals = [j.job_name, j.last_success ?? null, j.last_attempt, j.last_attempt_ok, j.last_error ?? null, j.checkpoint ?? null, now];\nconst setClauses = ['last_attempt=excluded.last_attempt', 'last_attempt_ok=excluded.last_attempt_ok', 'updated_at=excluded.updated_at'];\nif (j.mode === 'success') {\n    setClauses.push('last_success=excluded.last_success', 'last_error=NULL');\n} else {\n    setClauses.push('last_error=excluded.last_error');\n}\nmsg.topic = 'INSERT INTO job_status (' + cols.join(', ') + ') VALUES (' + vals.map(sqlVal).join(', ') + ') ' +\n    'ON CONFLICT(job_name) DO UPDATE SET ' + setClauses.join(', ');\nreturn msg;",
+    "outputs": 1,
+    "x": 190,
+    "y": 400,
+    "wires": [["n_gr_sqlite_upsert_db"]]
+  },
+  {
+    "id": "n_gr_sqlite_upsert_db",
+    "type": "sqlite",
+    "z": "tab_godaddy_restore",
+    "name": "sqlite: UPSERT job_status",
+    "mydb": "cfg_lucius_status_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "x": 470,
+    "y": 400,
+    "wires": [[]]
+  },
+  {
+    "id": "cfg_wardstock_godaddy_backup_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "WardStock GoDaddy backup DB",
+    "db": "/share/wardstock_godaddy_backup.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "cfg_lucius_status_db",
+    "type": "sqlitedb",
+    "z": "",
+    "name": "Lucius status DB",
+    "db": "/share/lucius_status.db",
+    "mode": "RWC"
+  }
+]
