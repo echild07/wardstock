@@ -156,8 +156,7 @@ function log_ha_sync($pdo, $endpoint, $statusCode, $detail = null) {
 // and makes re-importing the same historical rows safe by default (the
 // scale app's export has a poor date-range picker, so re-exports routinely
 // contain days already imported — a day that already has a weight, from
-// any source, is always a no-op here). Returns true if a value was
-// written, false if it was left alone (already set).
+// any source, is always a no-op here). Returns ['written' => bool, 'existing_lb' => float|null].
 function push_weight_if_unset($pdo, $date, $weightLb) {
     $existing = $pdo->prepare('SELECT id, weight FROM wardstock_daily_logs WHERE log_date = ?');
     $existing->execute([$date]);
@@ -165,16 +164,116 @@ function push_weight_if_unset($pdo, $date, $weightLb) {
 
     if ($row) {
         if ($row['weight'] !== null) {
-            return false;
+            return ['written' => false, 'existing_lb' => (float)$row['weight']];
         }
         $stmt = $pdo->prepare('UPDATE wardstock_daily_logs SET weight = ? WHERE id = ?');
         $stmt->execute([$weightLb, $row['id']]);
-        return true;
+        return ['written' => true, 'existing_lb' => null];
     }
 
     $stmt = $pdo->prepare('INSERT INTO wardstock_daily_logs (log_date, weight) VALUES (?, ?)');
     $stmt->execute([$date, $weightLb]);
-    return true;
+    return ['written' => true, 'existing_lb' => null];
+}
+
+// beewell/standwhy write path (Aug 2026) — api/daily_log_push.php's merge
+// logic. Ward's own framing: the manual Daily Log entry screen
+// (daily_form.php) IS the interface — this accepts the same field set,
+// under the same column names, with the same "never silently clobber a
+// real entry" caution every other automated write in this project already
+// follows (push_weight_if_unset above; import_records()'s daily_log merge).
+//
+// Two different safety rules for two different kinds of field, not one
+// rule for all of them:
+// - NUMERIC_ONLY_IF_UNSET: a scalar reading (weight, sleep, HR, steps...).
+//   Written only if the row doesn't already have a value there — an
+//   automated source never overwrites anything a person (or Oura) already
+//   entered. Matches "Never overwrite Oura sleep/HRV/weight from Bee"
+//   (beewell/CLAUDE.md) exactly, just generalized to every scalar column
+//   instead of naming three of them specially.
+// - APPEND_TEXT: a free-text field (notes). Appending is safe by
+//   construction — nothing existing is ever lost — so these always add a
+//   new dated, sourced block rather than being gated on "already set."
+//   Idempotent on external_ref: if that exact ref's bracket tag is
+//   already present in the field, the append is skipped (a retried
+//   delivery must not duplicate the same note twice).
+//
+// medications_taken_json / medications_all_taken are deliberately NOT
+// accepted here — resolving a spoken/classified medication name to the
+// right medication id safely is a real, separate problem, not something
+// to guess at inside a generic merge function. Callers get an explicit
+// 'unsupported_fields' note back if they send either.
+const DAILY_LOG_NUMERIC_ONLY_IF_UNSET = [
+    'sleep_duration_hrs', 'sleep_efficiency', 'resting_hr', 'hrv', 'weight',
+    'steps', 'exercise_minutes', 'standing_minutes', 'mood_rating',
+    'state_of_mind', 'caffeine_servings', 'alcohol_drinks',
+];
+const DAILY_LOG_APPEND_TEXT = [
+    'free_notes', 'medication_notes', 'night_waking_notes',
+    'activity_exertion', 'caffeine', 'alcohol',
+];
+
+// $fields: any subset of the columns above (extra/unknown keys ignored).
+// $source/$externalRef: stamped into each appended text block's bracket
+// tag, e.g. "[beewell 2026-08-25 15:04 ET ref=bee:utt:...]" — same
+// bracket-prefix shape ROUTING.md's own worked example already specifies.
+// Returns a per-field report so the caller (and its own ha_sync_log entry)
+// can see exactly what happened, not just a bare success/fail.
+function merge_daily_log_fields($pdo, $date, array $fields, $source, $externalRef) {
+    $existing = $pdo->prepare('SELECT * FROM wardstock_daily_logs WHERE log_date = ?');
+    $existing->execute([$date]);
+    $row = $existing->fetch();
+
+    $report = ['numeric' => [], 'text' => [], 'unsupported_fields' => []];
+    $sets = [];
+    $params = ['log_date' => $date];
+
+    foreach ($fields as $key => $value) {
+        if ($key === 'medications_taken_json' || $key === 'medications_all_taken') {
+            $report['unsupported_fields'][] = $key;
+            continue;
+        }
+        if (in_array($key, DAILY_LOG_NUMERIC_ONLY_IF_UNSET, true)) {
+            if ($value === null || $value === '') continue;
+            $currentlySet = $row && $row[$key] !== null && $row[$key] !== '';
+            if ($currentlySet) {
+                $report['numeric'][$key] = ['written' => false, 'reason' => 'already_set', 'existing' => $row[$key]];
+            } else {
+                $sets[$key] = $value;
+                $report['numeric'][$key] = ['written' => true];
+            }
+        } elseif (in_array($key, DAILY_LOG_APPEND_TEXT, true)) {
+            $text = trim((string)$value);
+            if ($text === '') continue;
+            $tag = '[' . $source . ' ref=' . $externalRef . ']';
+            $existingText = $row[$key] ?? '';
+            if ($externalRef && strpos((string)$existingText, $tag) !== false) {
+                $report['text'][$key] = ['written' => false, 'reason' => 'duplicate_external_ref'];
+                continue;
+            }
+            $block = $tag . ' ' . $text;
+            $sets[$key] = trim($existingText) === '' ? $block : rtrim((string)$existingText) . "\n" . $block;
+            $report['text'][$key] = ['written' => true, 'appended' => true];
+        } else {
+            $report['unsupported_fields'][] = $key;
+        }
+    }
+
+    if ($sets) {
+        foreach ($sets as $k => $v) { $params[$k] = $v; }
+        if ($row) {
+            $setSql = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($sets)));
+            $stmt = $pdo->prepare("UPDATE wardstock_daily_logs SET $setSql WHERE log_date = :log_date");
+            $stmt->execute($params);
+        } else {
+            $cols = array_merge(['log_date'], array_keys($sets));
+            $placeholders = implode(', ', array_map(fn($k) => ":$k", $cols));
+            $stmt = $pdo->prepare('INSERT INTO wardstock_daily_logs (' . implode(', ', $cols) . ") VALUES ($placeholders)");
+            $stmt->execute($params);
+        }
+    }
+
+    return $report;
 }
 
 // Overdue = elapsed time since last_run_at exceeds the component's own

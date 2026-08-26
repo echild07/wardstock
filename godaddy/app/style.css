@@ -127,11 +127,20 @@ h1 { font-size: 1.4rem; margin: 0; }
 .brand-logo-link img { border-radius: 50%; }
 
 /* Site-wide footer (Aug 2026, matches the LeeWard portal's own footer) —
-   included via partials_footer.php near the end of every page. */
-.site-foot { margin-top: 28px; padding: 12px 0 0; display: flex; justify-content: flex-end; }
+   included via partials_footer.php near the end of every page. Standard as
+   of Aug 2026: version + copyright, bottom-right, on desktop; copyright
+   only, centered at the bottom, on mobile — see partials_footer.php and
+   leeward/tools/php/components.css's lw-site-foot. Breakpoint matches this
+   file's own existing 560px convention (used elsewhere in this stylesheet),
+   not wherewhen's 840px — each product keeps its own layout breakpoint. */
+.site-foot { margin-top: 28px; padding: 12px 0; display: flex; align-items: baseline; justify-content: flex-end; gap: 0.6rem; border-top: 1px solid var(--border); }
 .copy { margin: 0; font-size: 0.82rem; color: var(--muted); }
 .copy a { color: inherit; text-decoration: none; }
 .copy a:hover { color: var(--text); }
+@media (max-width: 560px) {
+  .site-foot { justify-content: center; }
+  .foot-version { display: none; }
+}
 
 .btn, button[type="submit"] {
   background: var(--accent);

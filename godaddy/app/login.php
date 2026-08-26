@@ -2,6 +2,8 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/app_version.php';
+require_once __DIR__ . '/leeward_visitor.php';
+leeward_log_visitor('wardstock', 'login.php');
 start_session();
 
 $error = '';

@@ -47,9 +47,24 @@ if (!is_numeric($weight) || $weight <= 0 || $weight > 999) {
 }
 
 try {
-    $wasSet = push_weight_if_unset($pdo, $date, (float)$weight);
-    log_ha_sync($pdo, 'weight_push', 'success', "date=$date weight_lb=$weight " . ($wasSet ? '(written)' : '(already set — no-op)'));
-    echo json_encode(['success' => true, 'date' => $date, 'weight_written' => $wasSet]);
+    $result = push_weight_if_unset($pdo, $date, (float)$weight);
+    $wasSet = !empty($result['written']);
+    if ($wasSet) {
+        log_ha_sync($pdo, 'weight_push', 'success', "date=$date weight_lb=$weight (written)");
+        echo json_encode(['success' => true, 'date' => $date, 'weight_written' => true, 'skipped' => false]);
+    } else {
+        $have = $result['existing_lb'];
+        log_ha_sync($pdo, 'weight_push', 'success', "date=$date skipped — Daily Log already has $have lb (scale sent $weight, not overwritten)");
+        echo json_encode([
+            'success' => true,
+            'date' => $date,
+            'weight_written' => false,
+            'skipped' => true,
+            'reason' => 'already_set',
+            'existing_weight_lb' => $have,
+            'offered_weight_lb' => (float)$weight,
+        ]);
+    }
 } catch (Exception $e) {
     http_response_code(500);
     log_ha_sync($pdo, 'weight_push', 'db_error', $e->getMessage());

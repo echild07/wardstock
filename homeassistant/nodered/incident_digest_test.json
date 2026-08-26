@@ -1,0 +1,105 @@
+[
+  {
+    "id": "tab_incident_digest_test",
+    "type": "tab",
+    "label": "WardStock - Incident Digest Test",
+    "disabled": false,
+    "info": "Manual. Same GET as production with --dry-run (never SMTP). Expect JSON count/mailed. Does not write incidents. PLAN.md \u00a72 companion."
+  },
+  {
+    "id": "n_idt_inj",
+    "type": "inject",
+    "z": "tab_incident_digest_test",
+    "name": "dry-run digest",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 80,
+    "wires": [
+      [
+        "n_idt_secrets"
+      ]
+    ]
+  },
+  {
+    "id": "n_idt_secrets",
+    "type": "file in",
+    "z": "tab_incident_digest_test",
+    "name": "read secrets",
+    "filename": "/share/lucius_secrets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "none",
+    "x": 360,
+    "y": 80,
+    "wires": [
+      [
+        "n_idt_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_idt_prep",
+    "type": "function",
+    "z": "tab_incident_digest_test",
+    "name": "prep dry-run cmd",
+    "func": "let raw = msg.payload;\ntry { if (typeof raw === 'string') raw = JSON.parse(raw); } catch (e) {\n    node.error('lucius secrets JSON parse failed: ' + e.message);\n    return null;\n}\nconst py = raw.python3 || 'python3';\nconst script = raw.incident_digest_script || '/share/lucius_incident_digest.py';\nconst secrets = '/share/lucius_secrets.json';\nconst extra = ' --dry-run';\nmsg.payload = py + ' ' + script + ' --secrets ' + secrets + extra;\nreturn msg;\n",
+    "outputs": 1,
+    "x": 580,
+    "y": 80,
+    "wires": [
+      [
+        "n_idt_exec"
+      ]
+    ]
+  },
+  {
+    "id": "n_idt_exec",
+    "type": "exec",
+    "z": "tab_incident_digest_test",
+    "name": "exec incident_digest.py --dry-run",
+    "command": "",
+    "addpay": true,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "120",
+    "winHide": false,
+    "oldrc": false,
+    "x": 820,
+    "y": 80,
+    "wires": [
+      [
+        "n_idt_dbg"
+      ],
+      [],
+      []
+    ]
+  },
+  {
+    "id": "n_idt_dbg",
+    "type": "debug",
+    "z": "tab_incident_digest_test",
+    "name": "dry-run stdout",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 1100,
+    "y": 80,
+    "wires": []
+  }
+]

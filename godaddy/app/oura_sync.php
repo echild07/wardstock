@@ -108,7 +108,7 @@ foreach (['oura_push', 'pull_manual_data', 'status', 'weight_push', 'status_push
             <?php else: ?>
               <code><?= htmlspecialchars($row['called_at']) ?></code> —
               <?= $row['status_code'] === 'success' ? '✅ success' : '❌ ' . htmlspecialchars($row['status_code']) ?>
-              <?php if ($row['status_code'] !== 'success' && $row['detail']): ?>
+              <?php if ($row['detail']): ?>
                 <span class="hint">(<?= htmlspecialchars($row['detail']) ?>)</span>
               <?php endif; ?>
             <?php endif; ?>

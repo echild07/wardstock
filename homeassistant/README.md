@@ -132,6 +132,11 @@ usage details.
   `/share/lucius_godaddy_backup.db` (structured fields also go to
   InfluxDB, same as `godaddy_pull_flow.json`). `PLAN.md` §22. Companion
   test: `godaddy_backup_test.json`.
+- `nodered/incident_digest_flow.json` — 21:00 (HA clock) + manual. GETs
+  `api/incident_digest.php` and emails only if that local calendar day
+  had incidents (`occurred_at`). Copy `homeassistant/incident_digest.py`
+  to `/share/lucius_incident_digest.py`. SMTP keys in
+  `lucius_secrets.json`. Companion: `incident_digest_test.json` (`--dry-run`).
 - `nodered/godaddy_restore_flow.json` — manual only, the highest-stakes
   flow added this session: reads `godaddy_backup_flow.json`'s SQLite copy
   back out and POSTs it to the new `api/bulk_restore.php` to repopulate a

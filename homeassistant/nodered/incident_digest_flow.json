@@ -1,0 +1,145 @@
+[
+  {
+    "id": "tab_incident_digest",
+    "type": "tab",
+    "label": "WardStock - Incident Digest",
+    "disabled": false,
+    "info": "21:00 local (HA clock) plus manual. Exec lucius_incident_digest.py: GET api/incident_digest.php, SMTP only if count>0. Copy homeassistant/incident_digest.py to /share/lucius_incident_digest.py. SMTP keys in /share/lucius_secrets.json. Companion: WardStock - Incident Digest Test. No HA Server field. python3 must exist on the Node-RED add-on (system_packages)."
+  },
+  {
+    "id": "n_id_sched",
+    "type": "inject",
+    "z": "tab_incident_digest",
+    "name": "21:00 daily",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "0 21 * * *",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 80,
+    "wires": [
+      [
+        "n_id_secrets"
+      ]
+    ]
+  },
+  {
+    "id": "n_id_manual",
+    "type": "inject",
+    "z": "tab_incident_digest",
+    "name": "manual",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 140,
+    "wires": [
+      [
+        "n_id_secrets"
+      ]
+    ]
+  },
+  {
+    "id": "n_id_secrets",
+    "type": "file in",
+    "z": "tab_incident_digest",
+    "name": "read secrets",
+    "filename": "/share/lucius_secrets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "none",
+    "x": 360,
+    "y": 110,
+    "wires": [
+      [
+        "n_id_prep"
+      ]
+    ]
+  },
+  {
+    "id": "n_id_prep",
+    "type": "function",
+    "z": "tab_incident_digest",
+    "name": "prep digest cmd",
+    "func": "let raw = msg.payload;\ntry { if (typeof raw === 'string') raw = JSON.parse(raw); } catch (e) {\n    node.error('lucius secrets JSON parse failed: ' + e.message);\n    return null;\n}\nconst py = raw.python3 || 'python3';\nconst script = raw.incident_digest_script || '/share/lucius_incident_digest.py';\nconst secrets = '/share/lucius_secrets.json';\nconst extra = msg.digestArgs || '';\nmsg.payload = py + ' ' + script + ' --secrets ' + secrets + extra;\nreturn msg;\n",
+    "outputs": 1,
+    "x": 580,
+    "y": 110,
+    "wires": [
+      [
+        "n_id_exec"
+      ]
+    ]
+  },
+  {
+    "id": "n_id_exec",
+    "type": "exec",
+    "z": "tab_incident_digest",
+    "name": "exec incident_digest.py",
+    "command": "",
+    "addpay": true,
+    "append": "",
+    "useSpawn": "false",
+    "timer": "120",
+    "winHide": false,
+    "oldrc": false,
+    "x": 820,
+    "y": 110,
+    "wires": [
+      [
+        "n_id_chk"
+      ],
+      [],
+      []
+    ]
+  },
+  {
+    "id": "n_id_chk",
+    "type": "function",
+    "z": "tab_incident_digest",
+    "name": "check rc",
+    "func": "if (msg.rc && msg.rc.code !== 0) {\n    node.error('incident_digest.py exit ' + msg.rc.code + ' ' + String(msg.payload || '').slice(0, 400));\n    return null;\n}\nreturn msg;\n",
+    "outputs": 1,
+    "x": 1040,
+    "y": 110,
+    "wires": [
+      [
+        "n_id_dbg"
+      ]
+    ]
+  },
+  {
+    "id": "n_id_dbg",
+    "type": "debug",
+    "z": "tab_incident_digest",
+    "name": "digest stdout",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 1260,
+    "y": 110,
+    "wires": []
+  }
+]

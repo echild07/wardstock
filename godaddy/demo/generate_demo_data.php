@@ -44,9 +44,9 @@ echo "Connected to demo database (" . DEMO_DB_NAME . "). Clearing old demo data.
 // Children before parents (FK: medication_dosage_history -> medications,
 // proposed_events -> incidents).
 foreach ([
-    'medication_dosage_history', 'proposed_events', 'blood_pressure_readings',
-    'attention_snoozes', 'therapy_sessions', 'therapy_schedules',
-    'incidents', 'daily_logs', 'medications',
+    'wardstock_medication_dosage_history', 'wardstock_proposed_events', 'wardstock_blood_pressure_readings',
+    'wardstock_attention_snoozes', 'wardstock_therapy_sessions', 'wardstock_therapy_schedules',
+    'wardstock_incidents', 'wardstock_daily_logs', 'wardstock_medications',
 ] as $table) {
     $pdo->exec("DELETE FROM $table");
     $pdo->exec("ALTER TABLE $table AUTO_INCREMENT = 1");
@@ -198,7 +198,7 @@ if (!empty($incidentIds)) {
 $pdo->prepare('INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)')
     ->execute(['preferred_timezone', 'America/New_York']);
 $pdo->prepare('INSERT INTO wardstock_app_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)')
-    ->execute(['db_version', '3.4']);
+    ->execute(['db_version', '4.0']);
 
 echo "\nDone. Demo database now has ~3 months of fictional sample data.\n";
 echo "Note: wherewhen's Analysis tab (analysis_results table) is intentionally left empty here —\n";

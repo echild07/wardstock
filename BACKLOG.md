@@ -33,6 +33,8 @@ When something here gets done, delete it (or move it to the relevant `RETROSPECT
 14. **Demo mode isn't set up on `aileeward.com`** — `DEMO_DB_NAME` is blank in that domain's config. A working demo instance already exists on the old `emperorschildren.net` domain, unaffected by this.
 15. **No scheduled flow polls `api/status.php` for version-drift automatically** — only the manual `system_test_flow.json` checks this today. Worth adding to one of the scheduled flows if catching drift without a manual run ever matters.
 
+16. **Evening incident digest is in-repo, not live.** `api/incident_digest.php` + `homeassistant/incident_digest.py` + Node-RED `incident_digest_flow.json`. Needs SFTP of the PHP, copy of the script to `/share/lucius_incident_digest.py`, SMTP app password in `lucius_secrets.json`, import of the two tabs, `python3` on the Node-RED add-on.
+
 ## Resolved this session, listed here only so nobody re-flags them
 
 - DB credentials on `aileeward.com` — Ward fixed and confirmed working (site live, `login.php`'s health check green).
