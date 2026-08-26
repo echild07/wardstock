@@ -2,7 +2,7 @@
   {
     "id": "tab_godaddy_pull",
     "type": "tab",
-    "label": "Lucius - GoDaddy Pull",
+    "label": "WardStock - GoDaddy Pull",
     "disabled": false,
     "info": "Runs every 15 minutes. Pulls full incidents/daily_logs/therapy_sessions from GoDaddy's api/pull_manual_data.php, writes structured fields to InfluxDB for correlation, archives the FULL raw response to local disk for disaster recovery (restorable via WardStock's existing import.php — see PLAN.md §4), logs job start/finish to InfluxDB, updates HA status entities.\n\nUNTESTED — same caveat as the Oura Sync flow. Verify the schedule trigger and http request node configs against your actual Node-RED version after import.\n\nCallable (Aug 2026, full_sync_flow.json) — n_gd_link_in is an additional entry point feeding the exact same first node (n_gd_read_secrets_file) the '15 minutes' inject already uses, so calling it via Link Call is identical to a normal scheduled run. n_gd_link_out_done fires (mode: return) right after the job's own success/failure is determined and logged, i.e. Full Sync doesn't block waiting on the async InfluxDB/SQLite bookkeeping writes that follow — those still happen, just not on the caller's critical path."
   },
@@ -148,7 +148,7 @@
     "type": "function",
     "z": "tab_godaddy_pull",
     "name": "Prepare archive write",
-    "func": "// Prepares the archive write — the actual write happens in the\n// following \"file\" (write) core node, not via require('fs') here.\n// createDir is enabled on that node, replacing the old fs.mkdirSync\n// call, so the /share/lucius_archive folder gets created automatically\n// if it doesn't exist yet.\nmsg.filename = '/share/lucius_archive/latest_manual_data.json';\nmsg.payload = JSON.stringify(msg.raw_archive_data, null, 2);\nreturn msg;",
+    "func": "// Prepares the archive write — the actual write happens in the\n// following \"file\" (write) core node, not via require('fs') here.\n// createDir is enabled on that node, replacing the old fs.mkdirSync\n// call, so the /share/wardstock_archive folder gets created automatically\n// if it doesn't exist yet.\nmsg.filename = '/share/wardstock_archive/latest_manual_data.json';\nmsg.payload = JSON.stringify(msg.raw_archive_data, null, 2);\nreturn msg;",
     "outputs": 1,
     "x": 1150,
     "y": 200,
@@ -271,7 +271,7 @@
     "type": "file",
     "z": "tab_godaddy_pull",
     "name": "Write disaster-recovery archive",
-    "filename": "/share/lucius_archive/latest_manual_data.json",
+    "filename": "/share/wardstock_archive/latest_manual_data.json",
     "filenameType": "str",
     "appendNewline": false,
     "createDir": true,

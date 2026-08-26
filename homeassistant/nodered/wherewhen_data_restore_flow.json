@@ -21,7 +21,7 @@
         "once": false,
         "onceDelay": 0.1,
         "topic": "",
-        "payload": "{\"backup_dir\": \"/share/lucius_data_backup/EDIT_ME\"}",
+        "payload": "{\"backup_dir\": \"/share/wardstock_data_backup/EDIT_ME\"}",
         "payloadType": "json",
         "x": 220,
         "y": 60,

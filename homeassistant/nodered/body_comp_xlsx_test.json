@@ -35,7 +35,7 @@
     "type": "function",
     "z": "tab_bodycomp_test",
     "name": "Set params.source (confirmed field name)",
-    "func": "// Confirmed from real grep of exceljs.js: 'read' operation requires\n// params.source, either a file path string or a Buffer. Using the\n// simpler file-path-string form \u2014 no separate file-in node needed.\nmsg.params = { source: '/share/lucius_body_comp_import/test_sample.xlsx' };\nreturn msg;",
+    "func": "// Confirmed from real grep of exceljs.js: 'read' operation requires\n// params.source, either a file path string or a Buffer. Using the\n// simpler file-path-string form \u2014 no separate file-in node needed.\nmsg.params = { source: '/share/wardstock_body_comp_import/test_sample.xlsx' };\nreturn msg;",
     "outputs": 1,
     "x": 350,
     "y": 80,

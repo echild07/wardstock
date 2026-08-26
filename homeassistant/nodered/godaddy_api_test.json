@@ -2,7 +2,7 @@
   {
     "id": "tab_godaddy_api_test",
     "type": "tab",
-    "label": "Lucius - GoDaddy API Test",
+    "label": "WardStock - GoDaddy API Test",
     "disabled": false,
     "info": "Manual companion test for every WardStock Node-RED flow that calls GoDaddy api/*.php (PLAN.md §2 standing rule). Click the inject node to run. Does NOT run on a schedule.\n\n1. Reads /share/lucius_secrets.json (same path production flows use — /share, not the Node-RED add-on's own /config).\n2. Debugs: file found, parse OK, key names (not secret values), resolved godaddy_base_url, and every constructed API URL + method. Bearer tokens are redacted to length + last 4.\n3. Live HTTP with the same Authorization: Bearer godaddy_api_sync_token the production flows send:\n   - GET api/status.php — expect 200\n   - GET api/get_shared_config.php — expect 200 (oura_client_id/secret redacted in debug)\n   - POST empty JSON {} to oura_push / status_push / weight_push / incident_push / analysis_push — expect 400 malformed_request. That proves the endpoint exists and accepted the token WITHOUT writing a row. Do not send a valid oura/weight/incident/analysis payload from this flow — there is no dry-run flag on those PHP files.\n   - GET api/pull_manual_data.php is constructed and printed but NOT called: that script always updates last_ha_pull_at, which would move the production 15-min pull bookmark.\n\nExpected live base URL: https://aileeward.com/wardstock (lowercase path). The parse step flags emperorschildren.net or /Wardstock if they are still in the secrets file.\n\nUNTESTED against a live stack until you run it — same caveat as system_test_flow.json. See homeassistant/README.md for import (Menu → Import; watch for a duplicate tab on re-import)."
   },

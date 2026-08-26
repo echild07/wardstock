@@ -43,7 +43,7 @@ This folder (`godaddy/`) is one of two pieces in the overall **Lucius** project 
 3. Upload everything from `app/` into `public_html/Wardstock/` (match your existing folder casing — Linux hosting is case-sensitive).
 4. Upload `config/` as its own subfolder — `public_html/Wardstock/config/` — keeping the folder structure intact (this is the one exception to "everything goes in flat"). Edit `config/config.php` with your `DB_HOST`/`DB_NAME`/`DB_USER`/`DB_PASS`, and set `APP_SECRET` to a random string.
 5. Upload `setup-delete-after-use/setup.php` into `public_html/Wardstock/`, visit it to create your login, then **delete it from the server**.
-6. Log in at `login.php`, then go to **Import** (under Where When → Export) and import `sql/medications_seed_import.json` to seed your real medication list — correct dosage-cadence dates included, so there's no post-install date to fix by hand. (Alternatively, HA's `godaddy_restore_from_file_flow.json` Node-RED flow can do this same import — copy the file to `/share/lucius_restore_import.json` and fire its manual trigger.)
+6. Log in at `login.php`, then go to **Import** (under Where When → Export) and import `sql/medications_seed_import.json` to seed your real medication list — correct dosage-cadence dates included, so there's no post-install date to fix by hand. (Alternatively, HA's `godaddy_restore_from_file_flow.json` Node-RED flow can do this same import — copy the file to `/share/wardstock_restore_import.json` and fire its manual trigger.)
 
 ## Upgrading an existing install (you have real data)
 

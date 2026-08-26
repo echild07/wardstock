@@ -2,7 +2,7 @@
     {
         "id": "tab_medical_history_import",
         "type": "tab",
-        "label": "Lucius - Medical History Import",
+        "label": "WardStock - Medical History Import",
         "disabled": false,
         "info": "Manual/on-demand — not scheduled (PLAN.md §19). Watches /share/lucius_medical_history_import/ for *.yaml files matching the structured medical-history import format documented in PLAN.md §19, upserts one `cardiac`/`medical`-category incident per `encounters[]` entry via the new token-authenticated api/incident_push.php (idempotent on the YAML entry's `id` slug, stored as `incidents.external_ref`), then moves processed files into processed/.\n\nUses Node-RED's CORE `yaml` node to parse each file (no new dependency) — this is the first place this project's flows use it, so verify it against a real file in the editor before trusting it; see medical_history_import_test.json for the isolated check. Also the first place this project's flows use core `split`/`join` twice in sequence within one flow (once over the file list, once over the flattened encounters list) rather than nested — each pair fully resolves before the next begins, so this is NOT the trickier nested-parts case, but still worth confirming behaves as expected on first real run.\n\n`symptom_context`/`therapy_history_reference`/`open_research_items` in the YAML are deliberately NOT read by this flow — per PLAN.md §19, those have no ingestible date (or aren't incident-shaped data at all) and stay reference-only in the file itself.\n\nUNTESTED — built from the documented YAML schema and the proven api-token/upsert patterns used elsewhere in this project, but never run against a live file or a live GoDaddy endpoint."
     },

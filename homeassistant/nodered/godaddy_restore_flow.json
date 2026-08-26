@@ -2,9 +2,9 @@
   {
     "id": "tab_godaddy_restore",
     "type": "tab",
-    "label": "Lucius - GoDaddy Restore",
+    "label": "WardStock - GoDaddy Restore",
     "disabled": false,
-    "info": "Manual trigger ONLY, deliberately (Ward, Aug 2026 — same 'wipe/migrate scenario, not routine' convention wherewhen_data_restore_flow.json already established for its own InfluxDB-only restore). Reads every row back out of the local disaster-recovery copy (/share/lucius_godaddy_backup.db, table godaddy_backup — see godaddy_backup_flow.json, which is what keeps that table current) and POSTs the whole thing to the new token-authenticated api/bulk_restore.php, which runs it through the exact same merge-safe import_records() logic the human-facing Import page has always used.\n\nUse this after GoDaddy's MySQL database has been wiped/rebuilt (this project's own active migration work, Aug 2026) to repopulate incidents/Daily Log/Therapy/Medications/dosage-history from HA's local mirror — GoDaddy stays the source of truth for hand-entered data day to day (godaddy_backup_flow.json reads FROM GoDaddy, never the other way, during normal operation); this flow is the one exception, run by hand, specifically to push HA's copy back UP after GoDaddy has nothing of its own left.\n\nDoes NOT touch EKG recordings (out of scope for the backup half too) or anything InfluxDB-only (Oura raw archive, body composition, analysis results — those are wherewhen_data_restore_flow.json's job, a separate flow, separate direction of 'source of truth').\n\nNo separate companion test flow, same reasoning as oura_backfill_flow.json — this manual, on-demand flow already functions as its own diagnostic tool; the debug sidebar shows exactly what got read from SQLite and what api/bulk_restore.php reported back.\n\nUNTESTED — built from established patterns in this project (godaddy_pull_flow.json's secrets/HTTP handling, the SQLite query shape confirmed by sqlite_test_flow.json) but never run end-to-end, and api/bulk_restore.php itself is new this same session. Verify node configs against your actual Node-RED version after import, and consider a dry run against a non-production GoDaddy database first if one is available."
+    "info": "Manual trigger ONLY, deliberately (Ward, Aug 2026 — same 'wipe/migrate scenario, not routine' convention wherewhen_data_restore_flow.json already established for its own InfluxDB-only restore). Reads every row back out of the local disaster-recovery copy (/share/wardstock_godaddy_backup.db, table godaddy_backup — see godaddy_backup_flow.json, which is what keeps that table current) and POSTs the whole thing to the new token-authenticated api/bulk_restore.php, which runs it through the exact same merge-safe import_records() logic the human-facing Import page has always used.\n\nUse this after GoDaddy's MySQL database has been wiped/rebuilt (this project's own active migration work, Aug 2026) to repopulate incidents/Daily Log/Therapy/Medications/dosage-history from HA's local mirror — GoDaddy stays the source of truth for hand-entered data day to day (godaddy_backup_flow.json reads FROM GoDaddy, never the other way, during normal operation); this flow is the one exception, run by hand, specifically to push HA's copy back UP after GoDaddy has nothing of its own left.\n\nDoes NOT touch EKG recordings (out of scope for the backup half too) or anything InfluxDB-only (Oura raw archive, body composition, analysis results — those are wherewhen_data_restore_flow.json's job, a separate flow, separate direction of 'source of truth').\n\nNo separate companion test flow, same reasoning as oura_backfill_flow.json — this manual, on-demand flow already functions as its own diagnostic tool; the debug sidebar shows exactly what got read from SQLite and what api/bulk_restore.php reported back.\n\nUNTESTED — built from established patterns in this project (godaddy_pull_flow.json's secrets/HTTP handling, the SQLite query shape confirmed by sqlite_test_flow.json) but never run end-to-end, and api/bulk_restore.php itself is new this same session. Verify node configs against your actual Node-RED version after import, and consider a dry run against a non-production GoDaddy database first if one is available."
   },
   {
     "id": "n_gr_trigger_manual",
@@ -78,7 +78,7 @@
     "type": "sqlite",
     "z": "tab_godaddy_restore",
     "name": "sqlite: SELECT * FROM godaddy_backup",
-    "mydb": "cfg_lucius_godaddy_backup_db",
+    "mydb": "cfg_wardstock_godaddy_backup_db",
     "sqlquery": "msg.topic",
     "sql": "",
     "x": 470,
@@ -228,11 +228,11 @@
     "wires": [[]]
   },
   {
-    "id": "cfg_lucius_godaddy_backup_db",
+    "id": "cfg_wardstock_godaddy_backup_db",
     "type": "sqlitedb",
     "z": "",
-    "name": "Lucius GoDaddy backup DB",
-    "db": "/share/lucius_godaddy_backup.db",
+    "name": "WardStock GoDaddy backup DB",
+    "db": "/share/wardstock_godaddy_backup.db",
     "mode": "RWC"
   },
   {

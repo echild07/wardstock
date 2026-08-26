@@ -2,9 +2,9 @@
   {
     "id": "tab_godaddy_backup",
     "type": "tab",
-    "label": "Lucius - GoDaddy Backup",
+    "label": "WardStock - GoDaddy Backup",
     "disabled": false,
-    "info": "Runs once a day (3am) plus a manual trigger. Pulls the FULL current state of incidents/Daily Log/Therapy/Medications/dosage-history from GoDaddy (api/pull_manual_data.php?scope=all — deliberately the full set every run, not since-last, so this is a true daily mirror rather than an accumulating log) and:\n\n1. Writes every record as one row of raw JSON into a dedicated local SQLite database, /share/lucius_godaddy_backup.db (table godaddy_backup) — a full REPLACE each run (old rows for a type are cleared before the fresh set is written), so a record deleted on GoDaddy doesn't linger forever as 'restorable' here. This is the real disaster-recovery copy: Ward's own framing, Aug 2026, 'we are wiping the godaddy database... GoDaddy is the source of truth for entered data, so read from GoDaddy, then keep HA's copy in sync, in case we need to restore it.'\n2. Also writes the same structured numeric fields to InfluxDB as time series (same line-building logic godaddy_pull_flow.json already uses for its own 15-minute pull) — this is for wherewhen's own correlation queries, not disaster recovery; duplicate points across the two flows are harmless (InfluxDB merges same-timestamp/same-tag writes).\n\nDeliberately NOT limited to a 60-day window, unlike an earlier draft of this feature — the whole point is recovering from a wiped GoDaddy database, which needs full history, not just a recent slice. EKG recordings are out of scope for this flow (Ward's own list: therapy sessions, medicine changes, weights, incidents, caffeine/alcohol — all covered by the 5 record types above; EKG has no restore-side push endpoint yet either).\n\nPairs with godaddy_restore_flow.json (manual-only) — that flow reads this same SQLite table back out and POSTs it to the new api/bulk_restore.php endpoint to actually repopulate a wiped GoDaddy database.\n\nUNTESTED — built from godaddy_pull_flow.json's proven-live patterns (same secrets read, same InfluxDB line-building, same job-status SQLite table) but never run end-to-end itself. Verify the schedule trigger, http request, and sqlite node configs against your actual Node-RED version after import."
+    "info": "Runs once a day (3am) plus a manual trigger. Pulls the FULL current state of incidents/Daily Log/Therapy/Medications/dosage-history from GoDaddy (api/pull_manual_data.php?scope=all — deliberately the full set every run, not since-last, so this is a true daily mirror rather than an accumulating log) and:\n\n1. Writes every record as one row of raw JSON into a dedicated local SQLite database, /share/wardstock_godaddy_backup.db (table godaddy_backup) — a full REPLACE each run (old rows for a type are cleared before the fresh set is written), so a record deleted on GoDaddy doesn't linger forever as 'restorable' here. This is the real disaster-recovery copy: Ward's own framing, Aug 2026, 'we are wiping the godaddy database... GoDaddy is the source of truth for entered data, so read from GoDaddy, then keep HA's copy in sync, in case we need to restore it.'\n2. Also writes the same structured numeric fields to InfluxDB as time series (same line-building logic godaddy_pull_flow.json already uses for its own 15-minute pull) — this is for wherewhen's own correlation queries, not disaster recovery; duplicate points across the two flows are harmless (InfluxDB merges same-timestamp/same-tag writes).\n\nDeliberately NOT limited to a 60-day window, unlike an earlier draft of this feature — the whole point is recovering from a wiped GoDaddy database, which needs full history, not just a recent slice. EKG recordings are out of scope for this flow (Ward's own list: therapy sessions, medicine changes, weights, incidents, caffeine/alcohol — all covered by the 5 record types above; EKG has no restore-side push endpoint yet either).\n\nPairs with godaddy_restore_flow.json (manual-only) — that flow reads this same SQLite table back out and POSTs it to the new api/bulk_restore.php endpoint to actually repopulate a wiped GoDaddy database.\n\nUNTESTED — built from godaddy_pull_flow.json's proven-live patterns (same secrets read, same InfluxDB line-building, same job-status SQLite table) but never run end-to-end itself. Verify the schedule trigger, http request, and sqlite node configs against your actual Node-RED version after import."
   },
   {
     "id": "n_gb_trigger_daily",
@@ -177,7 +177,7 @@
     "type": "sqlite",
     "z": "tab_godaddy_backup",
     "name": "sqlite: CREATE TABLE IF NOT EXISTS",
-    "mydb": "cfg_lucius_godaddy_backup_db",
+    "mydb": "cfg_wardstock_godaddy_backup_db",
     "sqlquery": "msg.topic",
     "sql": "",
     "x": 950,
@@ -208,7 +208,7 @@
     "type": "sqlite",
     "z": "tab_godaddy_backup",
     "name": "sqlite: DELETE FROM godaddy_backup",
-    "mydb": "cfg_lucius_godaddy_backup_db",
+    "mydb": "cfg_wardstock_godaddy_backup_db",
     "sqlquery": "msg.topic",
     "sql": "",
     "x": 420,
@@ -239,7 +239,7 @@
     "type": "sqlite",
     "z": "tab_godaddy_backup",
     "name": "sqlite: INSERT OR REPLACE rows",
-    "mydb": "cfg_lucius_godaddy_backup_db",
+    "mydb": "cfg_wardstock_godaddy_backup_db",
     "sqlquery": "msg.topic",
     "sql": "",
     "x": 950,
@@ -401,11 +401,11 @@
     ]
   },
   {
-    "id": "cfg_lucius_godaddy_backup_db",
+    "id": "cfg_wardstock_godaddy_backup_db",
     "type": "sqlitedb",
     "z": "",
-    "name": "Lucius GoDaddy backup DB",
-    "db": "/share/lucius_godaddy_backup.db",
+    "name": "WardStock GoDaddy backup DB",
+    "db": "/share/wardstock_godaddy_backup.db",
     "mode": "RWC"
   },
   {

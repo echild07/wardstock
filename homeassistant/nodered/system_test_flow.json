@@ -2,7 +2,7 @@
   {
     "id": "tab_system_test",
     "type": "tab",
-    "label": "Lucius - System Test",
+    "label": "WardStock - System Test",
     "disabled": false,
     "info": "Manual diagnostic flow \u2014 click the inject node to run. Checks, in order: (1) the secrets config file loads and has every required key populated, (2) generic internet reachability, (3) InfluxDB reachability, (4) Oura's API reachability, (5) GoDaddy's api/status.php reachability + auth + version-sync. Results print to the debug sidebar as one summary. Does NOT run on a schedule \u2014 this is a manual health check, not a monitoring job.\n\nUNTESTED, same caveat as the other two flows \u2014 built carefully but never run against a live stack. See homeassistant/README.md."
   },
