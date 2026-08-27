@@ -4,7 +4,7 @@
     "type": "tab",
     "label": "WardStock - Incident Digest",
     "disabled": false,
-    "info": "21:00 local (HA clock) plus manual. Exec wardstock_incident_digest.py: GET api/incident_digest.php, SMTP only if count>0. Copy homeassistant/incident_digest.py to /share/wardstock_incident_digest.py. SMTP keys in /share/wardstock_secrets.json. Companion: WardStock - Incident Digest Test. No HA Server field. python3 must exist on the Node-RED add-on (system_packages)."
+    "info": "21:00 local (HA clock) plus manual. Exec wardstock_incident_digest.py: GET api/incident_digest.php, SMTP only if count>0. Copy HA/share/incident_digest.py to /share/wardstock_incident_digest.py. SMTP keys in /share/wardstock_secrets.json. Companion: WardStock - Incident Digest Test. No HA Server field. python3 must exist on the Node-RED add-on (system_packages)."
   },
   {
     "id": "n_id_sched",

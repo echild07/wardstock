@@ -129,8 +129,8 @@ def live():
     return [
         tab(
             z,
-            "Lucius - Incident Digest",
-            "21:00 local (HA clock) plus manual. Exec wardstock_incident_digest.py: GET api/incident_digest.php, SMTP only if count>0. Copy homeassistant/incident_digest.py to /share/wardstock_incident_digest.py. SMTP keys in /share/wardstock_secrets.json. Companion: Lucius - Incident Digest Test. No HA Server field. python3 must exist on the Node-RED add-on (system_packages).",
+            "WardStock - Incident Digest",
+            "21:00 local (HA clock) plus manual. Exec wardstock_incident_digest.py: GET api/incident_digest.php, SMTP only if count>0. Copy HA/share/incident_digest.py to /share/wardstock_incident_digest.py. SMTP keys in /share/wardstock_secrets.json. Companion: WardStock - Incident Digest Test. No HA Server field. python3 must exist on the Node-RED add-on (system_packages).",
         ),
         inject("n_id_sched", z, "21:00 daily", 140, 80, ["n_id_secrets"], crontab="0 21 * * *"),
         inject("n_id_manual", z, "manual", 140, 140, ["n_id_secrets"]),
@@ -148,7 +148,7 @@ def test():
     return [
         tab(
             z,
-            "Lucius - Incident Digest Test",
+            "WardStock - Incident Digest Test",
             "Manual. Same GET as production with --dry-run (never SMTP). Expect JSON count/mailed. Does not write incidents. PLAN.md §2 companion.",
         ),
         inject("n_idt_inj", z, "dry-run digest", 140, 80, ["n_idt_secrets"]),
