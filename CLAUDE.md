@@ -22,6 +22,25 @@ Also includes Node-RED changes deployed separately (not via this repo's own vers
 - **`hosted/README.md`** / **`HA/README.md`** — setup and deployment steps for each piece.
 - **`PROMPT.md`** — from-scratch rebuild prompt, concrete current-state facts only, no history.
 
+## Layout — where a new file goes
+
+General rule: `../leeward/STANDARDS.md` §9. This repo, concretely:
+
+| New file is... | Goes in |
+|---|---|
+| PHP/HTML for the live app | `hosted/web/` |
+| MySQL schema/upgrade `.sql` | `hosted/mysql/` |
+| Real credentials (never committed) | `hosted/config/` |
+| One-time setup/reset tooling | `hosted/setup/` |
+| Kiosk demo variant | `hosted/demo/` |
+| Node-RED flow JSON / its `_gen_*.py` generator | `HA/nodered/` |
+| Anything copied to live `/share` (secrets template, a script Node-RED `exec`s) | `HA/share/` |
+| SQLite schema/apply/probe script | `HA/sqlite/` (currently empty — see that folder's own README for why) |
+| Source logo/flyer assets, not themselves deployed | `marketing/` |
+
+No PC-only tooling bucket here (unlike wattwhen/beewell's `home/`) — everything in this repo either
+deploys to `hosted/` or `HA/`, or is a doc.
+
 ## Outstanding work
 
 **`BACKLOG.md`** is the one running list — read that, not this section, for what's actually still open. (This section used to duplicate that list inline; it drifted stale every time, since updating a narrative handoff note and a live backlog are two different habits and only one ever actually happened. Audited and consolidated Aug 22 2026 — everything that section described as open had either already shipped or is now tracked in `BACKLOG.md` instead.)
