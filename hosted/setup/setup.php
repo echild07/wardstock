@@ -1,5 +1,19 @@
 <?php
-require_once __DIR__ . '/db.php';
+// Works whether this file was uploaded flat (same dir as db.php -- the
+// documented convention, hosted/README.md) or into a nested subfolder
+// one level below the flattened app root -- checked both ways (27 Aug
+// 2026) after the same class of assumption caused a real bug in
+// standwhy's and beewell's own setup tools.
+$__root = null;
+foreach ([__DIR__, dirname(__DIR__)] as $__dir) {
+    if (is_file($__dir . '/db.php')) { $__root = $__dir; break; }
+}
+if ($__root === null) {
+    http_response_code(500);
+    die('Could not find db.php next to this file or one level up -- check where it was uploaded.');
+}
+require_once $__root . '/db.php';
+$__assetPrefix = ($__root === __DIR__) ? '' : '../'; // style.css lives next to db.php
 
 // SAFETY: only allow this page to run if no user exists yet.
 // Wrapped in try/catch (Aug 2026 — Ward hit a blank 500 on a fresh
@@ -39,7 +53,7 @@ if ($dbError !== null) {
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Setup</title>
-<link rel="stylesheet" href="style.css"></head>
+<link rel="stylesheet" href="<?= htmlspecialchars($__assetPrefix . 'style.css') ?>"></head>
 <body>
 <div class="wrap narrow">
   <h1>First-time setup</h1>
