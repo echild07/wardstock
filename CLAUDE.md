@@ -45,6 +45,21 @@ deploys to `hosted/` or `HA/`, or is a doc.
 
 **`BACKLOG.md`** is the one running list — read that, not this section, for what's actually still open. (This section used to duplicate that list inline; it drifted stale every time, since updating a narrative handoff note and a live backlog are two different habits and only one ever actually happened. Audited and consolidated Aug 22 2026 — everything that section described as open had either already shipped or is now tracked in `BACKLOG.md` instead.)
 
+## 6.0.0 planning — Node-RED → Python + Docker (not started, 28 Aug 2026)
+
+Architecture: `../leeward/PLATFORM_6.0.md`. **Goes last** in the conversion order, deliberately —
+this repo has by far the largest flow surface (4x any other product), specifically because it's
+been live longest; prove the pattern on standwhy/beewell/wattwhen first.
+
+Flows to convert (25 files, `HA/nodered/`): `analysis_engine_flow` (+ test), `body_comp_import_flow`
+(+ test), `full_sync_flow`, `godaddy_api_test`, `godaddy_backup_flow` (+ test), `godaddy_pull_flow`,
+`godaddy_restore_flow`, `godaddy_restore_from_file_flow`, `incident_digest_flow` (+ test),
+`medical_history_import_flow` (+ test), `medications_influx_cleanup_flow`, `oura_backfill_flow`,
+`oura_sync_flow`, `sqlite_test_flow`, `status_heartbeat_flow`, `system_test_flow`,
+`wherewhen_data_export_flow`, `wherewhen_data_restore_flow` (+ test), plus `all_flows_merged.json`
+(the bulk-import bundle, retired once nothing needs Node-RED import anymore). Nothing here yet;
+this is a todo marker, not a build in progress.
+
 ## Conventions worth knowing before touching anything
 
 - **Versioning:** `Major.Data.Code` — see `hosted/README.md` and `../leeward/STANDARDS.md` §3. Data number (SQL/Influx/SQLite format) is what the store tracks; a code-only push needs no database step. Shared major + codename: `../leeward/VERSIONS.md` (currently 5 "Aidan"). Default page chrome: `../leeward/branding/BRANDING.md`.
