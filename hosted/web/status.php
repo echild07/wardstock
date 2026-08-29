@@ -1,10 +1,8 @@
 <?php
-// Lucius project — consolidated HA / Node-RED / Analytics status page
-// (PLAN.md §15). Ward's stated goal: "is something wrong, and where" at
-// a glance, from the one place that's always reachable, without needing
-// to log into HA/Node-RED at all. Data comes from wardstock_system_status_reports,
-// upserted by the HA-side "Status Heartbeat" flow every 15 min via
-// api/status_push.php — this page itself never talks to HA directly.
+// WardStock system status (PLAN.md §15). The on-prem box is WOS now —
+// Home Assistant was retired (that Pi is 192.168.4.29). This page only
+// reads wardstock_system_status_reports, upserted every 15 min by the
+// WardStock orchestrator via api/status_push.php.
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_login();
@@ -15,7 +13,11 @@ $subActive = 'status';
 
 $rows = $pdo->query('SELECT * FROM wardstock_system_status_reports ORDER BY category, component')->fetchAll();
 
-$byCategory = ['ha' => [], 'nodered' => [], 'analytics' => []];
+// `ha` leftover rows (ha_core from the retired Home Assistant box, or a
+// brief mis-aimed WOS heartbeat) are not shown. There is no delete API
+// for this table — phpMyAdmin if you want them gone. Category `wos` is
+// the live processing-box signal.
+$byCategory = ['wos' => [], 'nodered' => [], 'analytics' => []];
 foreach ($rows as $r) {
     if (isset($byCategory[$r['category']])) {
         $byCategory[$r['category']][] = $r;
@@ -28,17 +30,18 @@ foreach ($rows as $r) {
 
 function fmt_component($c) {
     $labels = [
-        'ha_core' => 'Home Assistant core (via Status Heartbeat)',
+        'wos' => 'WOS processing (192.168.4.29)',
         'oura_sync' => 'Oura Sync (every 4h)',
         'godaddy_pull' => 'GoDaddy Pull (every 15min)',
         'bodycomp_import' => 'Body Composition Import (daily, ~noon)',
         'medical_history_import' => 'Medical History Import (manual/on-demand)',
-        'wherewhen_export' => 'wherewhen Data Export (manual + weekly Sun 3am)',
+        'wherewhen_export' => 'wherewhen Data Export (nightly via full_sync + manual)',
         'wherewhen_restore' => 'wherewhen Data Restore (manual/on-demand)',
         'analysis_engine' => 'wherewhen Analysis Engine (daily/weekly/monthly + manual all-data)',
         'godaddy_backup' => 'GoDaddy Backup — SQLite (daily 3am + manual)',
         'godaddy_restore' => 'GoDaddy Restore — from SQLite (manual/on-demand)',
         'godaddy_restore_from_file' => 'GoDaddy Restore — from export file (manual/on-demand)',
+        'incident_digest' => 'Incident digest email (21:00)',
     ];
     return $labels[$c] ?? htmlspecialchars($c);
 }
@@ -64,20 +67,20 @@ function fmt_component($c) {
   <?php include __DIR__ . '/partials_nav.php'; ?>
   <?php include __DIR__ . '/partials_wherewhen_nav.php'; ?>
 
-  <p class="hint">HA / Node-RED / Analytics, reported here every ~15 minutes by the Home Assistant piece's Status Heartbeat flow (PLAN.md §15). This page only reads what was last reported — it doesn't reach out to HA itself.</p>
+  <p class="hint">WOS / on-prem jobs / analytics, reported here every ~15 minutes by the WardStock orchestrator on WOS. This page only reads what was last pushed — it does not reach out to the box. Home Assistant was retired (that Pi is WOS); leftover <code>ha</code> MySQL rows are hidden here. There is no delete API for those rows — phpMyAdmin if you want them gone.</p>
   <p class="hint">Related: <a href="debug.php">Debug / Version →</a> · <a href="oura_test.php">Oura Connection Test →</a></p>
 
   <?php foreach ([
-      'ha' => 'Home Assistant',
-      'nodered' => 'Node-RED Flows',
+      'wos' => 'WOS',
+      'nodered' => 'On-prem jobs',
       'analytics' => 'Analytics',
   ] as $cat => $catLabel): ?>
     <h3 class="section-label"><?= htmlspecialchars($catLabel) ?></h3>
 
     <?php if ($cat === 'analytics' && !$byCategory['analytics']): ?>
-      <p class="empty">Nothing to report yet — this fills in once the Grafana/correlation-analysis phase exists (PLAN.md §11). Placeholder by design, not a bug.</p>
+      <p class="empty">Nothing to report yet under this heading — analysis results live with the on-prem jobs above (analysis_engine).</p>
     <?php elseif (!$byCategory[$cat]): ?>
-      <p class="empty">No reports received yet — either the Status Heartbeat flow hasn't run, or hasn't been built/deployed yet.</p>
+      <p class="empty">No reports received yet — the WardStock orchestrator heartbeat has not pushed this category.</p>
     <?php else: ?>
       <table class="day-table">
         <tbody>
@@ -129,8 +132,8 @@ function fmt_component($c) {
     <?php endif; ?>
   <?php endforeach; ?>
 
-  <p class="hint" style="margin-top:24px;">A <em>failed</em> run and a <em>missing/overdue</em> run are shown differently on purpose (PLAN.md §15) — a failure means it ran and something went wrong; overdue means it hasn't run when it should have, which is itself a distinct signal (a hung flow, HA being down, etc.).</p>
-  <p class="hint">Per-endpoint call history: <a href="oura_test.php">Connection test</a>. Per-flow detail: <a href="oura_sync.php">HA Sync Status</a>.</p>
+  <p class="hint" style="margin-top:24px;">A <em>failed</em> run and a <em>missing/overdue</em> run are shown differently on purpose (PLAN.md §15) — a failure means it ran and something went wrong; overdue means it hasn't run when it should have (hung job, WOS down, etc.).</p>
+  <p class="hint">Per-endpoint call history: <a href="oura_test.php">Connection test</a>. Per-job Oura detail: <a href="oura_sync.php">Oura sync log</a>.</p>
 </div>
 <?php include __DIR__ . '/partials_footer.php'; ?>
 <script>

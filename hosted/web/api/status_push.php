@@ -1,11 +1,9 @@
 <?php
-// Lucius project — Home Assistant piece POSTs a consolidated status
-// snapshot here from its "Status Heartbeat" flow (see homeassistant/PLAN.md
-// §15), every 15 minutes. Feeds status.php's three-category view (HA /
-// Node-RED / Analytics) — deliberately a separate, dedicated reporting
-// flow rather than each sync flow pushing its own status inline, so this
-// endpoint always gets one full snapshot per call, not partial updates
-// from three different flows racing each other.
+// WardStock orchestrator POSTs a consolidated status snapshot here
+// every 15 minutes (job_status_heartbeat). Feeds status.php's WOS /
+// on-prem-jobs / analytics view. Category `wos` is the processing-box
+// liveness signal (HA was retired). `ha` is still accepted so an old
+// client cannot 400, but status.php hides those leftover rows.
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../auth.php';
 
@@ -27,7 +25,7 @@ if (!is_array($body) || !isset($body['reports']) || !is_array($body['reports']))
     exit;
 }
 
-$validCategories = ['ha', 'nodered', 'analytics'];
+$validCategories = ['ha', 'nodered', 'analytics', 'wos'];
 $upserted = 0;
 $errors = [];
 

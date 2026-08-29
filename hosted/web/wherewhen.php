@@ -74,7 +74,7 @@ $therapyCount = (int)$pdo->query('SELECT COUNT(*) c FROM wardstock_therapy_sessi
         <span class="hub-icon tag-incident">◍</span>
       </div>
       <h2>Status</h2>
-      <p>Is HA / Node-RED / analytics healthy right now — the one place that's always reachable.</p>
+      <p>Is WOS / on-prem jobs / analytics healthy right now — the one place that's always reachable.</p>
     </a>
     <a class="hub-card" href="export.php">
       <div class="hub-card-top">
