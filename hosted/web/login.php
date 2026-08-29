@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $error = 'Invalid username or password.';
+    leeward_log_visitor('wardstock', 'login-fail');
 }
 
 // System health check (Ward, Aug 2026 — "validate the SQL server is
@@ -154,5 +155,6 @@ $systemReady = $health['dbConnected'] && $health['schemaOk'] && $health['hasAcco
   </div>
 </div>
 <?php include __DIR__ . '/partials_footer.php'; ?>
+<?= leeward_visitor_hint_script() ?>
 </body>
 </html>
