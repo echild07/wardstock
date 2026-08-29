@@ -63,10 +63,20 @@
 // so a code-only release never shows as "out of sync" just because no
 // migration was ever shipped for it to run.
 
+// 5.0.1 (29 Aug 2026): import_records()'s incident branch had no natural-key
+// matching at all — every restore/import unconditionally INSERTed a fresh
+// row, unlike daily_log/therapy_session/medication/ecg_recording, which all
+// already matched-and-updated. Found live: a v6 orchestrator's
+// godaddy-restore test created 14 real duplicate incident rows (restoring
+// the exact data GoDaddy already had). Fixed to match on (occurred_at,
+// category), same merge-don't-overwrite shape as therapy_session's
+// (session_date, session_type). No schema change — wardstock_incidents is
+// unchanged, this is purely the import/restore logic — Code bump, not Data.
+
 define('APP_VERSION_NAME', 'Aidan');
 define('APP_VERSION_MAJOR', 5);
 define('APP_VERSION_DATA', 0);
 define('APP_VERSION_SQL', APP_VERSION_DATA);
-define('APP_VERSION_CODE', 0);
+define('APP_VERSION_CODE', 1);
 define('APP_VERSION_SCHEMA', sprintf('%d.%d', APP_VERSION_MAJOR, APP_VERSION_DATA));
 define('APP_VERSION', sprintf('%d.%d.%d', APP_VERSION_MAJOR, APP_VERSION_DATA, APP_VERSION_CODE));

@@ -476,7 +476,7 @@ function import_records($pdo, array $records) {
     }
 
     $counts = [
-        'incident' => ['inserted' => 0, 'skipped' => 0],
+        'incident' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
         'daily_log' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
         'therapy_session' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
         'medication' => ['inserted' => 0, 'updated' => 0, 'skipped' => 0],
@@ -503,20 +503,60 @@ function import_records($pdo, array $records) {
                 // resolution) since a straight import/restore is expected to
                 // target the SAME database the export came from, where the
                 // id is still valid.
+                //
+                // Matched by (occurred_at, category) — real bug, found 29 Aug
+                // 2026 running a v6 orchestrator's godaddy-restore against the
+                // live database: this branch used to always INSERT
+                // unconditionally (the comment that used to sit here called
+                // out incidents as having "no [natural key], unlike
+                // medication" — true when written, but never actually fixed
+                // once a restore path existed that could re-run the same
+                // data). Restoring/re-importing data already present created
+                // 14 real duplicate rows. occurred_at is timestamped to the
+                // minute — two genuinely distinct incidents sharing both the
+                // exact same minute AND category is not a realistic
+                // collision for a personal health log; same match-or-update
+                // shape as therapy_session's (session_date, session_type)
+                // and ecg_recording's (recorded_at, device_product) below.
                 $cols = ['category', 'occurred_at', 'ended_at', 'trigger_context', 'thoughts_before',
                          'chest_sensation', 'arm_sensation', 'shoulder_sensation', 'headache_sensation',
                          'shaking', 'stomach_sensation', 'flu_symptoms_sensation', 'lethargy_sensation',
                          'anxiety_intensity', 'duration_minutes', 'nitroglycerin_taken',
                          'what_helped_recovery', 'differed_from_pattern', 'medical_evaluation',
                          'medical_evaluation_notes', 'related_medication_id', 'free_notes'];
+
+                $existing = $pdo->prepare('SELECT * FROM wardstock_incidents WHERE occurred_at = ? AND category = ?');
+                $existing->execute([$rec['occurred_at'], $rec['category'] ?? 'anxiety']);
+                $existingRow = $existing->fetch();
+
+                // Merge, don't overwrite — same rule every other branch here follows: only
+                // fields actually present (and non-null) in the import record replace what's
+                // there; everything else keeps its existing value.
                 $fields = [];
-                foreach ($cols as $c) { $fields[$c] = array_key_exists($c, $rec) ? $rec[$c] : null; }
+                foreach ($cols as $c) {
+                    if (array_key_exists($c, $rec) && $rec[$c] !== null) {
+                        $fields[$c] = $rec[$c];
+                    } elseif ($existingRow) {
+                        $fields[$c] = $existingRow[$c];
+                    } else {
+                        $fields[$c] = null;
+                    }
+                }
                 if (empty($fields['category'])) $fields['category'] = 'anxiety'; // NOT NULL column
-                $colList = implode(', ', array_keys($fields));
-                $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
-                $stmt = $pdo->prepare("INSERT INTO wardstock_incidents ($colList) VALUES ($placeholders)");
-                $stmt->execute($fields);
-                $counts['incident']['inserted']++;
+
+                if ($existingRow) {
+                    $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("UPDATE wardstock_incidents SET $set WHERE id = :id");
+                    $fields['id'] = $existingRow['id'];
+                    $stmt->execute($fields);
+                    $counts['incident']['updated']++;
+                } else {
+                    $colList = implode(', ', array_keys($fields));
+                    $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($fields)));
+                    $stmt = $pdo->prepare("INSERT INTO wardstock_incidents ($colList) VALUES ($placeholders)");
+                    $stmt->execute($fields);
+                    $counts['incident']['inserted']++;
+                }
 
             } elseif ($type === 'daily_log') {
                 if (empty($rec['log_date'])) { $counts['daily_log']['skipped']++; continue; }
