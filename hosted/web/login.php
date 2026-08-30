@@ -3,6 +3,9 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/app_version.php';
 require_once __DIR__ . '/leeward_visitor.php';
+if (is_file(__DIR__ . '/inc/leeward_auth.php')) {
+    require_once __DIR__ . '/inc/leeward_auth.php';
+}
 leeward_log_visitor('wardstock', 'login.php');
 start_session();
 
@@ -10,6 +13,16 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
+    if (function_exists('leeward_try_login')) {
+        [$lw_ok] = leeward_try_login('wardstock', $username, $password);
+        if ($lw_ok) {
+            $cu = leeward_current_user();
+            unset($_SESSION['demo_mode']);
+            $_SESSION['user_id'] = (int) $cu['id'];
+            header('Location: index.php');
+            exit;
+        }
+    }
     $pdo = get_db();
     $stmt = $pdo->prepare('SELECT * FROM wardstock_app_user WHERE username = ?');
     $stmt->execute([$username]);
